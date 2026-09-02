@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  userId               String         @id
+  fullName             String
+  emailId              String         @unique
+  password             String
+  isDeleted            Boolean        @default(false)
+  updatedBy            String?
+  updatedAt            DateTime?      @updatedAt
+  createdAt            DateTime       @default(now())
+  threads              Thread[]       @relation("ThreadCreatedBy")
+  createdSystemPrompts SystemPrompt[] @relation("SystemPromptCreatedBy")
+  updatedSystemPrompts SystemPrompt[] @relation("SystemPromptUpdatedBy")
+}
+
+model Thread {
+  threadId       String  @id @default(uuid())
+  title          String
+  userId         String
+  systemPromptId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  creator      User          @relation("ThreadCreatedBy", fields: [userId], references: [userId], onDelete: Cascade)
+  systemPrompt SystemPrompt? @relation(fields: [systemPromptId], references: [systemPromptId], onDelete: SetNull)
+  messages     Message[]
+  @@index([userId])
+}
+
+model Message {
+  messageId    String  @id @default(uuid())
+  threadId     String
+  role         String
+  content      String
+  model        String
+  provider     String
+  inputTokens  Int?
+  outputTokens Int?
+  totalTokens  Int?
+  sequence     Int     @default(0)
+  // Link AI responses to user questions
+  questionId String?
+  question   Message?  @relation("MessageHistory", fields: [questionId], references: [messageId], onDelete: SetNull)
+  answers    Message[] @relation("MessageHistory")
+  createdAt DateTime @default(now())
+  thread Thread @relation(fields: [threadId], references: [threadId], onDelete: Cascade)
+  @@index([threadId])
+  @@index([questionId])
+}
+
+model SystemPrompt {
+  systemPromptId String  @id @default(uuid())
+  name           String
+  prompt         String
+  isDeleted      Boolean @default(false)
+  createdBy String
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  creator User     @relation("SystemPromptCreatedBy", fields: [createdBy], references: [userId], onDelete: Restrict)
+  updater User?    @relation("SystemPromptUpdatedBy", fields: [updatedBy], references: [userId], onDelete: SetNull)
+  threads Thread[]
+  @@index([createdBy])
+}

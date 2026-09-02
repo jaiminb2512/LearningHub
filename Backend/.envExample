@@ -1,0 +1,6 @@
+PORT=
+JWT_SECRET=
+JWT_EXPIRES_IN=
+FRONTEND_URLS = http://localhost:5173, http://localhost:3000
+DATABASE_URL=
+GEMINI_API_KEY=
