@@ -1,10 +1,12 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"] 
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  extensions = [vector]   
 }
 
 model User {
@@ -12,10 +14,12 @@ model User {
   fullName             String
   emailId              String         @unique
   password             String
+
   isDeleted            Boolean        @default(false)
   updatedBy            String?
   updatedAt            DateTime?      @updatedAt
   createdAt            DateTime       @default(now())
+
   threads              Thread[]       @relation("ThreadCreatedBy")
   createdSystemPrompts SystemPrompt[] @relation("SystemPromptCreatedBy")
   updatedSystemPrompts SystemPrompt[] @relation("SystemPromptUpdatedBy")
@@ -26,11 +30,15 @@ model Thread {
   title          String
   userId         String
   systemPromptId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   creator      User          @relation("ThreadCreatedBy", fields: [userId], references: [userId], onDelete: Cascade)
   systemPrompt SystemPrompt? @relation(fields: [systemPromptId], references: [systemPromptId], onDelete: SetNull)
+
   messages     Message[]
+
   @@index([userId])
 }
 
@@ -45,12 +53,17 @@ model Message {
   outputTokens Int?
   totalTokens  Int?
   sequence     Int     @default(0)
+
   // Link AI responses to user questions
   questionId String?
   question   Message?  @relation("MessageHistory", fields: [questionId], references: [messageId], onDelete: SetNull)
   answers    Message[] @relation("MessageHistory")
+
   createdAt DateTime @default(now())
-  thread Thread @relation(fields: [threadId], references: [threadId], onDelete: Cascade)
+  thread    Thread   @relation(fields: [threadId], references: [threadId], onDelete: Cascade)
+
+  documents Document[] @relation("MessageDocuments")
+
   @@index([threadId])
   @@index([questionId])
 }
@@ -60,12 +73,32 @@ model SystemPrompt {
   name           String
   prompt         String
   isDeleted      Boolean @default(false)
+
   createdBy String
   updatedBy String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   creator User     @relation("SystemPromptCreatedBy", fields: [createdBy], references: [userId], onDelete: Restrict)
   updater User?    @relation("SystemPromptUpdatedBy", fields: [updatedBy], references: [userId], onDelete: SetNull)
+
   threads Thread[]
+
   @@index([createdBy])
+}
+
+model Document {
+  id        String @id @default(uuid())
+  messageId String
+
+  embedding            Unsupported("vector(3072)")
+  embeddingModel       String
+  embeddingDimensions  Int      @default(3072)
+  embeddedAt           DateTime @default(now())
+
+  message Message @relation("MessageDocuments", fields: [messageId], references: [messageId], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([embeddingModel])
+  @@map("documents")
 }
