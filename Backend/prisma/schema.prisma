@@ -21,6 +21,7 @@ model User {
   createdAt            DateTime       @default(now())
 
   threads              Thread[]       @relation("ThreadCreatedBy")
+  documents            Document[]     @relation("UserDocuments")
   createdSystemPrompts SystemPrompt[] @relation("SystemPromptCreatedBy")
   updatedSystemPrompts SystemPrompt[] @relation("SystemPromptUpdatedBy")
 }
@@ -37,7 +38,8 @@ model Thread {
   creator      User          @relation("ThreadCreatedBy", fields: [userId], references: [userId], onDelete: Cascade)
   systemPrompt SystemPrompt? @relation(fields: [systemPromptId], references: [systemPromptId], onDelete: SetNull)
 
-  messages     Message[]
+  messages  Message[]
+  documents Document[] @relation("ThreadDocuments")
 
   @@index([userId])
 }
@@ -89,16 +91,21 @@ model SystemPrompt {
 
 model Document {
   id        String @id @default(uuid())
+  userId    String
+  threadId  String
   messageId String
 
-  embedding            Unsupported("vector(3072)")
-  embeddingModel       String
-  embeddingDimensions  Int      @default(3072)
-  embeddedAt           DateTime @default(now())
+  embedding           Unsupported("vector(3072)")
+  embeddingModel      String
+  embeddingDimensions Int      @default(3072)
+  embeddedAt          DateTime @default(now())
 
+  user    User    @relation("UserDocuments", fields: [userId], references: [userId], onDelete: Cascade)
+  thread  Thread  @relation("ThreadDocuments", fields: [threadId], references: [threadId], onDelete: Cascade)
   message Message @relation("MessageDocuments", fields: [messageId], references: [messageId], onDelete: Cascade)
 
+  @@index([userId])
+  @@index([threadId])
   @@index([messageId])
   @@index([embeddingModel])
-  @@map("documents")
 }

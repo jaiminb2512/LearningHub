@@ -1,4 +1,4 @@
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { internetSearchTool } from "./aiTools.js"
 import { createAgent } from "langchain";
 import dotenv from "dotenv";
@@ -30,4 +30,13 @@ export const streamMessage = async (systemPrompt, messages, provider, model) => 
         { role: "system", content: systemPrompt },
         ...messages,
     ]);
+}
+
+export const generateEmbedding = async (text) => {
+    const embeddings = new GoogleGenerativeAIEmbeddings({
+        model: "gemini-embedding-001",
+        apiKey: process.env.GEMINI_API_KEY,
+    });
+    const vector = await embeddings.embedQuery(text);
+    return vector;
 }
