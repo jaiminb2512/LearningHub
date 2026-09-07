@@ -317,13 +317,3 @@ export const getThreadUsage = async (req, res) => {
     return sendResponse(res, 500, "Failed to fetch thread usage", { error: error.message });
   }
 };
-
-export const testBuildSystemPrompt = async (req, res) => {
-  try {
-    const prompt = await prompt("da91ba00-5972-4633-9571-6d9882659ded", "cde2247f-400e-40f8-943c-e7b5d5799738", "test message");
-    return sendResponse(res, 200, "System prompt built successfully", prompt);
-  } catch (error) {
-    console.error("buildSystemPrompt error:", error);
-    return sendResponse(res, 500, "Failed to build system prompt", { error: error.message });
-  }
-}
