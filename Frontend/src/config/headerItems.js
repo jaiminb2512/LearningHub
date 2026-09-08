@@ -1,5 +1,6 @@
 import SparklesIcon from '@mui/icons-material/AutoAwesome';
 import SettingsIcon from '@mui/icons-material/Settings';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
 
 export const mainNavItems = [
     {
@@ -8,6 +9,13 @@ export const mainNavItems = [
         icon: SparklesIcon,
         path: '/ai-chat',
         activePaths: ['/ai-chat'],
+    },
+    {
+        id: 'books',
+        label: 'Books',
+        icon: MenuBookIcon,
+        path: '/books',
+        activePaths: ['/books'],
     },
     {
         id: 'system-prompts',

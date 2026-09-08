@@ -24,6 +24,8 @@ model User {
   documents            Document[]     @relation("UserDocuments")
   createdSystemPrompts SystemPrompt[] @relation("SystemPromptCreatedBy")
   updatedSystemPrompts SystemPrompt[] @relation("SystemPromptUpdatedBy")
+  books                Book[]         @relation("UserBooks")
+  notes                Note[]         @relation("UserNotes")
 }
 
 model Thread {
@@ -40,6 +42,8 @@ model Thread {
 
   messages  Message[]
   documents Document[] @relation("ThreadDocuments")
+  books     Book[]     @relation("ThreadBooks")
+  notes     Note[]     @relation("ThreadNotes")
 
   @@index([userId])
 }
@@ -108,4 +112,60 @@ model Document {
   @@index([threadId])
   @@index([messageId])
   @@index([embeddingModel])
+}
+
+model Book {
+  bookId      String   @id @default(uuid())
+  userId      String
+  threadId    String?
+  title       String
+  description String?
+  summary     String?
+  status      String   @default("ACTIVE")
+  sourceType  String   @default("MANUAL")
+  isDefault   Boolean  @default(false)
+  isDeleted   Boolean  @default(false)
+  createdBy   String
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user   User    @relation("UserBooks", fields: [userId], references: [userId], onDelete: Cascade)
+  thread Thread? @relation("ThreadBooks", fields: [threadId], references: [threadId], onDelete: SetNull)
+  notes  Note[]
+
+  @@index([userId])
+  @@index([userId, isDeleted, status])
+  @@index([userId, isDefault])
+  @@index([updatedAt])
+}
+
+model Note {
+  noteId     String   @id @default(uuid())
+  bookId     String
+  userId     String
+  threadId   String?
+  title      String
+  content    String
+  format     String   @default("markdown")
+  status     String   @default("ACTIVE")
+  summary    String?
+  section    String?
+  orderIndex Int      @default(0)
+  isDeleted  Boolean  @default(false)
+  createdBy  String
+  updatedBy  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  book   Book    @relation(fields: [bookId], references: [bookId], onDelete: Cascade)
+  user   User    @relation("UserNotes", fields: [userId], references: [userId], onDelete: Cascade)
+  thread Thread? @relation("ThreadNotes", fields: [threadId], references: [threadId], onDelete: SetNull)
+
+  @@index([bookId])
+  @@index([bookId, isDeleted, orderIndex])
+  @@index([userId])
+  @@index([userId, isDeleted, status])
+  @@index([threadId])
+  @@index([updatedAt])
 }
