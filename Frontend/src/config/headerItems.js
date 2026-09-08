@@ -48,5 +48,7 @@ const findNavTitle = (items, pathname) => {
 export const getPageTitle = (pathname) => {
     if (pathname === '/login') return 'Login';
     if (pathname === '/register') return 'Register';
+    // Nested book routes render a custom title via headerActions
+    if (pathname.startsWith('/books/')) return '';
     return findNavTitle(mainNavItems, pathname);
 };

@@ -42,7 +42,7 @@ export const createNoteHandler = async (req, res) => {
 
 export const getNotesByBookHandler = async (req, res) => {
   try {
-    const { page, limit, q, section, status } = req.query;
+    const { page, limit, q, section, status, includeContent } = req.query;
     const data = await listNotes({
       userId: req.user.userId,
       bookId: req.params.bookId,
@@ -51,6 +51,10 @@ export const getNotesByBookHandler = async (req, res) => {
       q,
       section,
       status: status || "ACTIVE",
+      includeContent:
+        includeContent === true ||
+        includeContent === "true" ||
+        includeContent === "1",
     });
     return sendResponse(res, 200, "Notes fetched successfully", data);
   } catch (error) {

@@ -7,7 +7,9 @@ import SystemPromptPage from './pages/SystemPromptPage.jsx';
 const AIChatListPage = lazy(() => import('./pages/AIChatListPage.jsx'));
 const AIChatDetailPage = lazy(() => import('./pages/AIChatDetailPage.jsx'));
 const BooksListPage = lazy(() => import('./pages/BooksListPage.jsx'));
+const BookFormPage = lazy(() => import('./pages/BookFormPage.jsx'));
 const BookDetailPage = lazy(() => import('./pages/BookDetailPage.jsx'));
+const BookReaderPage = lazy(() => import('./pages/BookReaderPage.jsx'));
 const NoteEditorPage = lazy(() => import('./pages/NoteEditorPage.jsx'));
 import { lightTheme, darkTheme } from './styles/theme'
 import SidebarNavigation, { SIDEBAR_WIDTH, SIDEBAR_WIDTH_COLLAPSED } from './components/sidebar/SidebarNavigation.jsx'
@@ -99,7 +101,10 @@ function AppContent({ themeMode, toggleTheme }) {
                 <Route path="/ai-chat" element={<AIChatListPage />} />
                 <Route path="/ai-chat/:chatId" element={<AIChatDetailPage />} />
                 <Route path="/books" element={<BooksListPage />} />
+                <Route path="/books/new" element={<BookFormPage />} />
+                <Route path="/books/:bookId/edit" element={<BookFormPage />} />
                 <Route path="/books/:bookId" element={<BookDetailPage />} />
+                <Route path="/books/:bookId/read" element={<BookReaderPage />} />
                 <Route path="/books/:bookId/notes/:noteId" element={<NoteEditorPage />} />
               </Route>
             </Routes>

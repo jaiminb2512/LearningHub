@@ -85,6 +85,7 @@ export async function listNotes({
   q,
   section,
   status = "ACTIVE",
+  includeContent = false,
 }) {
   await assertBookOwned({ userId, bookId });
 
@@ -110,27 +111,30 @@ export async function listNotes({
       : {}),
   };
 
+  const select = {
+    noteId: true,
+    bookId: true,
+    userId: true,
+    threadId: true,
+    title: true,
+    summary: true,
+    section: true,
+    orderIndex: true,
+    format: true,
+    status: true,
+    isDeleted: true,
+    createdAt: true,
+    updatedAt: true,
+    ...(includeContent ? { content: true } : {}),
+  };
+
   const [notes, total] = await Promise.all([
     prisma.note.findMany({
       where,
       orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }],
       skip,
       take: safeLimit,
-      select: {
-        noteId: true,
-        bookId: true,
-        userId: true,
-        threadId: true,
-        title: true,
-        summary: true,
-        section: true,
-        orderIndex: true,
-        format: true,
-        status: true,
-        isDeleted: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select,
     }),
     prisma.note.count({ where }),
   ]);

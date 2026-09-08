@@ -18,11 +18,13 @@ const handleError = (res, error, fallbackMessage) => {
 
 export const createBookHandler = async (req, res) => {
   try {
-    const { title, description, threadId, sourceType } = req.body;
+    const { title, description, summary, status, threadId, sourceType } = req.body;
     const book = await createBook({
       userId: req.user.userId,
       title,
       description,
+      summary,
+      status,
       threadId,
       sourceType,
     });
@@ -62,7 +64,7 @@ export const getBookByIdHandler = async (req, res) => {
 
 export const updateBookHandler = async (req, res) => {
   try {
-    const { title, description, status, summary } = req.body;
+    const { title, description, status, summary, sourceType, threadId } = req.body;
     const book = await updateBook({
       userId: req.user.userId,
       bookId: req.params.bookId,
@@ -70,6 +72,8 @@ export const updateBookHandler = async (req, res) => {
       description,
       status,
       summary,
+      sourceType,
+      threadId,
     });
     return sendResponse(res, 200, "Book updated successfully", book);
   } catch (error) {

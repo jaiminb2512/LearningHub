@@ -21,7 +21,9 @@ import {
 } from '@mui/material';
 import {
   Add as AddIcon,
+  AutoStories as AutoStoriesIcon,
   DeleteOutline as DeleteIcon,
+  EditOutlined as EditIcon,
   MenuBook as BookIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -41,8 +43,6 @@ const BooksListPage = () => {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ title: '', description: '' });
   const [submitting, setSubmitting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -83,42 +83,14 @@ const BooksListPage = () => {
         variant="contained"
         size="small"
         startIcon={<AddIcon />}
-        onClick={() => {
-          setForm({ title: '', description: '' });
-          setDialogOpen(true);
-        }}
+        onClick={() => navigate('/books/new')}
         sx={{ height: 38, px: 2, fontWeight: 600 }}
       >
         New book
       </Button>
     );
     return () => setHeaderActions(null);
-  }, [setHeaderActions]);
-
-  const handleCreate = async () => {
-    if (!form.title.trim()) {
-      showToast('Title is required', 'error');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const response = await bookService.createBook({
-        title: form.title.trim(),
-        description: form.description.trim() || undefined,
-      });
-      if (isSuccess(response)) {
-        showToast('Book created');
-        setDialogOpen(false);
-        navigate(`/books/${response.data.bookId}`);
-      } else {
-        showToast(response?.message || 'Failed to create book', 'error');
-      }
-    } catch (error) {
-      showToast(error?.response?.data?.message || 'Failed to create book', 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  }, [navigate, setHeaderActions]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -180,9 +152,55 @@ const BooksListPage = () => {
           {books.map((book) => (
             <Grid item xs={12} sm={6} md={4} key={book.bookId}>
               <Card variant="outlined" sx={{ height: '100%', position: 'relative' }}>
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 6,
+                    right: 6,
+                    zIndex: 1,
+                    display: 'flex',
+                    gap: 0.25,
+                  }}
+                >
+                  <IconButton
+                    size="small"
+                    aria-label="View as book"
+                    title="View as book"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/books/${book.bookId}/read`);
+                    }}
+                  >
+                    <AutoStoriesIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    aria-label="Edit book"
+                    title="Edit book"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/books/${book.bookId}/edit`);
+                    }}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                  {!book.isDefault && (
+                    <IconButton
+                      size="small"
+                      aria-label="Delete book"
+                      title="Delete book"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(book);
+                      }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                </Box>
                 <CardActionArea onClick={() => navigate(`/books/${book.bookId}`)} sx={{ height: '100%' }}>
                   <CardContent>
-                    <Typography variant="h6" sx={{ pr: book.isDefault ? 0 : 4, mb: 0.5 }}>
+                    <Typography variant="h6" sx={{ pr: 10, mb: 0.5 }}>
                       {book.title}
                       {book.isDefault ? (
                         <Typography component="span" variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
@@ -195,22 +213,10 @@ const BooksListPage = () => {
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {book.noteCount} note{book.noteCount === 1 ? '' : 's'}
+                      {book.status && book.status !== 'ACTIVE' ? ` · ${book.status}` : ''}
                     </Typography>
                   </CardContent>
                 </CardActionArea>
-                {!book.isDefault && (
-                  <IconButton
-                    size="small"
-                    aria-label="Delete book"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteTarget(book);
-                    }}
-                    sx={{ position: 'absolute', top: 8, right: 8 }}
-                  >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                )}
               </Card>
             </Grid>
           ))}
@@ -227,34 +233,6 @@ const BooksListPage = () => {
           />
         </Box>
       )}
-
-      <Dialog open={dialogOpen} onClose={() => !submitting && setDialogOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>New book</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-          <TextField
-            autoFocus
-            label="Title"
-            value={form.title}
-            onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-            fullWidth
-            required
-          />
-          <TextField
-            label="Description"
-            value={form.description}
-            onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-            fullWidth
-            multiline
-            minRows={2}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogOpen(false)} disabled={submitting}>Cancel</Button>
-          <Button variant="contained" onClick={handleCreate} disabled={submitting}>
-            {submitting ? 'Creating…' : 'Create'}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <Dialog open={Boolean(deleteTarget)} onClose={() => !submitting && setDeleteTarget(null)}>
         <DialogTitle>Delete book?</DialogTitle>

@@ -66,6 +66,8 @@ export async function createBook({
   userId,
   title,
   description,
+  summary,
+  status = "ACTIVE",
   threadId,
   sourceType = "MANUAL",
 }) {
@@ -74,13 +76,23 @@ export async function createBook({
     throw new BookServiceError("Title is required", 400);
   }
 
+  if (status && !["ACTIVE", "ARCHIVED"].includes(status)) {
+    throw new BookServiceError("Invalid status", 400);
+  }
+
+  if (sourceType && !["MANUAL", "AI_CHAT"].includes(sourceType)) {
+    throw new BookServiceError("Invalid sourceType", 400);
+  }
+
   const book = await prisma.book.create({
     data: {
       userId,
       title: trimmedTitle,
       description: description?.trim() || null,
-      threadId: threadId || null,
-      sourceType,
+      summary: summary?.trim() || null,
+      status: status || "ACTIVE",
+      threadId: threadId?.trim() || null,
+      sourceType: sourceType || "MANUAL",
       createdBy: userId,
     },
     select: bookListSelect,
@@ -158,6 +170,8 @@ export async function updateBook({
   description,
   status,
   summary,
+  sourceType,
+  threadId,
 }) {
   const existing = await prisma.book.findFirst({
     where: { bookId, userId, isDeleted: false },
@@ -193,6 +207,17 @@ export async function updateBook({
       throw new BookServiceError("Invalid status", 400);
     }
     data.status = status;
+  }
+
+  if (sourceType !== undefined) {
+    if (!["MANUAL", "AI_CHAT"].includes(sourceType)) {
+      throw new BookServiceError("Invalid sourceType", 400);
+    }
+    data.sourceType = sourceType;
+  }
+
+  if (threadId !== undefined) {
+    data.threadId = threadId?.trim() || null;
   }
 
   const book = await prisma.book.update({

@@ -94,22 +94,64 @@ const BookDetailPage = () => {
   }, [load]);
 
   useEffect(() => {
+    if (!book) {
+      setHeaderActions(
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<ArrowBackIcon />}
+          onClick={() => navigate('/books')}
+          sx={{ height: 38, fontWeight: 600 }}
+        >
+          Back
+        </Button>
+      );
+      return () => setHeaderActions(null);
+    }
+
     setHeaderActions(
-      <Button
-        variant="contained"
-        size="small"
-        startIcon={<AddIcon />}
-        onClick={() => {
-          setNewTitle('');
-          setCreateOpen(true);
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.5,
+          width: '100%',
+          minWidth: 0,
         }}
-        sx={{ height: 38, px: 2, fontWeight: 600 }}
       >
-        New note
-      </Button>
+        <IconButton
+          size="small"
+          onClick={() => navigate('/books')}
+          aria-label="Back to books"
+          sx={{ flexShrink: 0 }}
+        >
+          <ArrowBackIcon />
+        </IconButton>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography noWrap sx={{ fontWeight: 600, fontSize: { xs: '0.95rem', sm: '1.05rem' }, lineHeight: 1.25 }}>
+            {book.title}
+          </Typography>
+          <Typography noWrap variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.3 }}>
+            {book.description || 'No description'} · {book.noteCount} note
+            {book.noteCount === 1 ? '' : 's'}
+          </Typography>
+        </Box>
+        <Button
+          variant="contained"
+          size="small"
+          startIcon={<AddIcon />}
+          onClick={() => {
+            setNewTitle('');
+            setCreateOpen(true);
+          }}
+          sx={{ height: 38, px: 2, fontWeight: 600, flexShrink: 0 }}
+        >
+          New note
+        </Button>
+      </Box>
     );
     return () => setHeaderActions(null);
-  }, [setHeaderActions]);
+  }, [book, navigate, setHeaderActions]);
 
   const handleCreate = async () => {
     if (!newTitle.trim()) {
@@ -165,31 +207,13 @@ const BookDetailPage = () => {
   if (!book) {
     return (
       <Container maxWidth="false" sx={{ py: 4 }}>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/books')}>
-          Back to books
-        </Button>
-        <Typography sx={{ mt: 2 }}>Book not found.</Typography>
+        <Typography>Book not found.</Typography>
       </Container>
     );
   }
 
   return (
     <Container maxWidth="false" sx={{ py: 3 }}>
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 2 }}>
-        <IconButton onClick={() => navigate('/books')} edge="start">
-          <ArrowBackIcon />
-        </IconButton>
-        <Box sx={{ flex: 1 }}>
-          <Typography variant="h5" fontWeight={600}>
-            {book.title}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {book.description || 'No description'} · {book.noteCount} note
-            {book.noteCount === 1 ? '' : 's'}
-          </Typography>
-        </Box>
-      </Box>
-
       <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
         <TextField
           size="small"
@@ -290,15 +314,52 @@ const BookDetailPage = () => {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(deleteTarget)} onClose={() => !submitting && setDeleteTarget(null)}>
-        <DialogTitle>Delete note?</DialogTitle>
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onClose={() => !submitting && setDeleteTarget(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 2, p: 0.5 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>Delete this note?</DialogTitle>
         <DialogContent>
-          <Typography>Soft-delete “{deleteTarget?.title}”?</Typography>
+          <Typography color="text.secondary" sx={{ mb: 1.5 }}>
+            You’re about to delete:
+          </Typography>
+          <Box
+            sx={{
+              p: 1.5,
+              borderRadius: 1.5,
+              bgcolor: 'action.hover',
+              border: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            <Typography fontWeight={600} noWrap>
+              {deleteTarget?.title || 'Untitled note'}
+            </Typography>
+            {deleteTarget?.section ? (
+              <Typography variant="caption" color="text.secondary">
+                {deleteTarget.section}
+              </Typography>
+            ) : null}
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            This will soft-delete the note. You won’t see it in the book TOC anymore.
+          </Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)} disabled={submitting}>Cancel</Button>
-          <Button color="error" variant="contained" onClick={handleDelete} disabled={submitting}>
-            Delete
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setDeleteTarget(null)} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDelete}
+            disabled={submitting}
+            startIcon={submitting ? <CircularProgress size={14} color="inherit" /> : <DeleteIcon />}
+          >
+            {submitting ? 'Deleting…' : 'Delete note'}
           </Button>
         </DialogActions>
       </Dialog>
