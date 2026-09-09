@@ -35,6 +35,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import threadService from '../services/threadService';
 import { systemPromptService } from '../services/systemPromptService';
+import aiSettingService from '../services/aiSettingService';
 import { useHeaderActions } from '../components/sidebar/HeaderActionsContext';
 
 const AIChatListPage = () => {
@@ -45,6 +46,7 @@ const AIChatListPage = () => {
     const [pagination, setPagination] = useState({ page: 1, totalPages: 1 });
 
     const [systemPrompts, setSystemPrompts] = useState([]);
+    const [aiSettings, setAiSettings] = useState([]);
     const [promptsLoading, setPromptsLoading] = useState(false);
     const { setHeaderActions } = useHeaderActions();
 
@@ -57,6 +59,7 @@ const AIChatListPage = () => {
         systemPromptId: '',
         promptName: '',
         promptText: '',
+        aiSettingId: '',
     });
 
     useEffect(() => {
@@ -66,9 +69,15 @@ const AIChatListPage = () => {
     const fetchSystemPrompts = async () => {
         setPromptsLoading(true);
         try {
-            const response = await systemPromptService.getAll({ page: 1, pageSize: 100 });
-            if (response.success === 200) {
-                setSystemPrompts(response.data.prompts || []);
+            const [promptResponse, settingsResponse] = await Promise.all([
+                systemPromptService.getAll({ page: 1, pageSize: 100 }),
+                aiSettingService.getAll({ page: 1, limit: 100 }),
+            ]);
+            if (promptResponse.success === 200) {
+                setSystemPrompts(promptResponse.data.prompts || []);
+            }
+            if (settingsResponse.success === 200) {
+                setAiSettings(settingsResponse.data?.settings || []);
             }
         } catch (error) {
             console.error('Error fetching system prompts:', error);
@@ -101,6 +110,7 @@ const AIChatListPage = () => {
             systemPromptId: '',
             promptName: '',
             promptText: '',
+            aiSettingId: '',
         });
         setPromptMode('select');
         setOpenDialog(true);
@@ -143,6 +153,10 @@ const AIChatListPage = () => {
                 };
             }
 
+            if (formData.aiSettingId) {
+                payload.aiSettingId = formData.aiSettingId;
+            }
+
             const response = await threadService.createThread(payload);
 
             if (response.success === 201) {
@@ -158,6 +172,11 @@ const AIChatListPage = () => {
 
     const handleContinueChat = (id) => {
         navigate(`/ai-chat/${id}`);
+    };
+
+    const prefetchChatChunk = () => {
+        import('./AIChatDetailPage');
+        import('../components/chat/AIChatContainer');
     };
 
     const handleDeleteChat = async (e, id) => {
@@ -229,6 +248,8 @@ const AIChatListPage = () => {
                                     >
                                         <ListItemButton
                                             onClick={() => handleContinueChat(chat.threadId)}
+                                            onMouseEnter={prefetchChatChunk}
+                                            onFocus={prefetchChatChunk}
                                             sx={{ py: 2, px: 3 }}
                                         >
                                             <ListItemIcon>
@@ -335,7 +356,6 @@ const AIChatListPage = () => {
                                     <TextField
                                         select
                                         name="systemPromptId"
-                                        label="Choose prompt"
                                         value={formData.systemPromptId}
                                         onChange={handleInputChange}
                                         fullWidth
@@ -393,6 +413,25 @@ const AIChatListPage = () => {
                                 </>
                             )}
                         </Box>
+
+                        <TextField
+                            select
+                            name="aiSettingId"
+                            label="AI settings (optional)"
+                            value={formData.aiSettingId}
+                            onChange={handleInputChange}
+                            fullWidth
+                            helperText="Controls temperature, output tokens, RAG, and model for this chat"
+                        >
+                            <MenuItem value="">
+                                <em>Default settings</em>
+                            </MenuItem>
+                            {aiSettings.map((setting) => (
+                                <MenuItem key={setting.aiSettingId} value={setting.aiSettingId}>
+                                    {setting.name}
+                                </MenuItem>
+                            ))}
+                        </TextField>
                     </DialogContent>
                     <DialogActions sx={{ p: 3, pt: 1 }}>
                         <Button

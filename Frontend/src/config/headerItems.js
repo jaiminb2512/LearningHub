@@ -1,6 +1,7 @@
 import SparklesIcon from '@mui/icons-material/AutoAwesome';
 import SettingsIcon from '@mui/icons-material/Settings';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
+import TuneIcon from '@mui/icons-material/Tune';
 
 export const mainNavItems = [
     {
@@ -16,6 +17,13 @@ export const mainNavItems = [
         icon: MenuBookIcon,
         path: '/books',
         activePaths: ['/books'],
+    },
+    {
+        id: 'ai-settings',
+        label: 'AI Settings',
+        icon: TuneIcon,
+        path: '/manage/ai-settings',
+        activePaths: ['/manage/ai-settings'],
     },
     {
         id: 'system-prompts',

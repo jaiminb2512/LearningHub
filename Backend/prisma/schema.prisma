@@ -26,6 +26,7 @@ model User {
   updatedSystemPrompts SystemPrompt[] @relation("SystemPromptUpdatedBy")
   books                Book[]         @relation("UserBooks")
   notes                Note[]         @relation("UserNotes")
+  aiSettings           AiSetting[]    @relation("UserAiSettings")
 }
 
 model Thread {
@@ -33,12 +34,14 @@ model Thread {
   title          String
   userId         String
   systemPromptId String?
+  aiSettingId    String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   creator      User          @relation("ThreadCreatedBy", fields: [userId], references: [userId], onDelete: Cascade)
   systemPrompt SystemPrompt? @relation(fields: [systemPromptId], references: [systemPromptId], onDelete: SetNull)
+  aiSetting    AiSetting?    @relation(fields: [aiSettingId], references: [aiSettingId], onDelete: SetNull)
 
   messages  Message[]
   documents Document[] @relation("ThreadDocuments")
@@ -46,6 +49,7 @@ model Thread {
   notes     Note[]     @relation("ThreadNotes")
 
   @@index([userId])
+  @@index([aiSettingId])
 }
 
 model Message {
@@ -168,4 +172,18 @@ model Note {
   @@index([userId, isDeleted, status])
   @@index([threadId])
   @@index([updatedAt])
+}
+
+model AiSetting {
+  aiSettingId  String   @id @default(uuid())
+  name         String
+  userId       String
+  settingsJson Json
+
+  createdAt DateTime @default(now())
+
+  user    User     @relation("UserAiSettings", fields: [userId], references: [userId], onDelete: Cascade)
+  threads Thread[]
+
+  @@index([userId])
 }

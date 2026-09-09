@@ -3,7 +3,7 @@ import sendResponse from "../utils/response.js";
 
 export const createThread = async (req, res) => {
   try {
-    const { title, systemPromptId, systemPrompt } = req.body;
+    const { title, systemPromptId, systemPrompt, aiSettingId } = req.body;
     const userId = req.user.userId;
 
     if (!title) {
@@ -36,11 +36,22 @@ export const createThread = async (req, res) => {
       return sendResponse(res, 400, "System prompt not found");
     }
 
+    let resolvedSettingId = aiSettingId || null;
+    if (resolvedSettingId) {
+      const existingSetting = await prisma.aiSetting.findFirst({
+        where: { aiSettingId: resolvedSettingId, userId },
+      });
+      if (!existingSetting) {
+        return sendResponse(res, 400, "AI setting not found");
+      }
+    }
+
     const thread = await prisma.thread.create({
       data: {
         title,
         userId,
         systemPromptId: resolvedPromptId,
+        aiSettingId: resolvedSettingId,
       },
       include: {
         systemPrompt: {
@@ -48,6 +59,13 @@ export const createThread = async (req, res) => {
             systemPromptId: true,
             name: true,
             prompt: true,
+          },
+        },
+        aiSetting: {
+          select: {
+            aiSettingId: true,
+            name: true,
+            settingsJson: true,
           },
         },
       },
@@ -133,6 +151,13 @@ export const getThreadById = async (req, res) => {
             prompt: true,
           },
         },
+        aiSetting: {
+          select: {
+            aiSettingId: true,
+            name: true,
+            settingsJson: true,
+          },
+        },
         messages: {
           orderBy: { sequence: "desc" },
           take: 10,
@@ -152,6 +177,73 @@ export const getThreadById = async (req, res) => {
   } catch (error) {
     console.error("getThreadById error:", error);
     return sendResponse(res, 500, "Failed to fetch thread", { error: error.message });
+  }
+};
+
+/**
+ * @desc    Update thread fields (e.g. AI settings at runtime)
+ * @route   PATCH /api/threads/:threadId
+ * @access  Private
+ */
+export const updateThread = async (req, res) => {
+  try {
+    const { threadId } = req.params;
+    const userId = req.user.userId;
+    const { aiSettingId } = req.body;
+
+    const thread = await prisma.thread.findFirst({
+      where: { threadId, userId },
+    });
+
+    if (!thread) {
+      return sendResponse(res, 404, "Thread not found");
+    }
+
+    const data = {};
+
+    if (aiSettingId !== undefined) {
+      if (aiSettingId === null || aiSettingId === "") {
+        data.aiSettingId = null;
+      } else {
+        const existingSetting = await prisma.aiSetting.findFirst({
+          where: { aiSettingId, userId },
+        });
+        if (!existingSetting) {
+          return sendResponse(res, 400, "AI setting not found");
+        }
+        data.aiSettingId = aiSettingId;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      return sendResponse(res, 400, "No valid fields to update");
+    }
+
+    const updated = await prisma.thread.update({
+      where: { threadId },
+      data,
+      include: {
+        systemPrompt: {
+          select: {
+            systemPromptId: true,
+            name: true,
+            prompt: true,
+          },
+        },
+        aiSetting: {
+          select: {
+            aiSettingId: true,
+            name: true,
+            settingsJson: true,
+          },
+        },
+      },
+    });
+
+    return sendResponse(res, 200, "Thread updated successfully", updated);
+  } catch (error) {
+    console.error("updateThread error:", error);
+    return sendResponse(res, 500, "Failed to update thread", { error: error.message });
   }
 };
 

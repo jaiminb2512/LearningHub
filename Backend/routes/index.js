@@ -5,6 +5,7 @@ import aiRoutes from "./aiRoutes.js";
 import systemPromptRoutes from "./systemPromptRoute.js";
 import bookRoutes from "./bookRoutes.js";
 import noteRoutes from "./noteRoutes.js";
+import aiSettingRoutes from "./aiSettingRoutes.js";
 
 const router = Router();
 router.use("/users", userRoutes);
@@ -13,5 +14,6 @@ router.use("/ai", aiRoutes);
 router.use("/system-prompts", systemPromptRoutes);
 router.use("/books", bookRoutes);
 router.use("/notes", noteRoutes);
+router.use("/ai-settings", aiSettingRoutes);
 
 export default router;

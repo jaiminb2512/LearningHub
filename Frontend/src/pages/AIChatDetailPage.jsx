@@ -1,22 +1,22 @@
-import React, { useEffect } from 'react';
-import { Box, Button } from '@mui/material';
+import React, { useEffect, Suspense, lazy } from 'react';
+import { Box, Button, CircularProgress } from '@mui/material';
 import { useParams, useNavigate } from 'react-router-dom';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import AIChatContainer from '../components/chat/AIChatContainer';
 import { useHeaderActions } from '../components/sidebar/HeaderActionsContext';
+
+const AIChatContainer = lazy(() => import('../components/chat/AIChatContainer'));
 
 const AIChatDetailPage = () => {
     const { chatId } = useParams();
     const navigate = useNavigate();
     const { setHeaderActions } = useHeaderActions();
 
-    // Header Actions
     useEffect(() => {
         setHeaderActions(
             <Button
                 variant="outlined"
                 startIcon={<ArrowBackIcon />}
-                onClick={() => navigate('/ai/chat')}
+                onClick={() => navigate('/ai-chat')}
                 size="small"
                 sx={{ height: 38, textTransform: 'none', fontWeight: 600 }}
             >
@@ -25,7 +25,7 @@ const AIChatDetailPage = () => {
         );
 
         return () => setHeaderActions(null);
-    }, []);
+    }, [navigate, setHeaderActions]);
 
     return (
         <Box sx={{
@@ -36,7 +36,15 @@ const AIChatDetailPage = () => {
             overflow: 'hidden'
         }}>
             <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
-                <AIChatContainer chatId={chatId} />
+                <Suspense
+                    fallback={
+                        <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <CircularProgress size={36} />
+                        </Box>
+                    }
+                >
+                    <AIChatContainer chatId={chatId} />
+                </Suspense>
             </Box>
         </Box>
     );

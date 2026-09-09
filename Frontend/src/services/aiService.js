@@ -29,7 +29,7 @@ const aiService = {
   /**
    * Stream AI response
    */
-  stream: async (threadId, message, onChunk, signal) => {
+  stream: async (threadId, message, onChunk, signal, onEvent) => {
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(`${ENDPOINTS.AI.STREAM.baseUrl}${ENDPOINTS.AI.STREAM.path}`, {
@@ -73,11 +73,14 @@ const aiService = {
             }
             try {
               const parsed = JSON.parse(dataStr);
+              if (parsed.type === 'prompt') {
+                if (typeof onEvent === 'function') onEvent(parsed);
+                continue;
+              }
               if (parsed.content) {
                 onChunk(parsed.content);
               }
             } catch (e) {
-              // Ignore parse errors for incomplete JSON or [DONE]
               console.warn("Error parsing SSE line:", trimmedLine);
             }
           }

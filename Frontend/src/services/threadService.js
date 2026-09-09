@@ -49,6 +49,21 @@ const threadService = {
   },
 
   /**
+   * Update a chat thread (e.g. switch AI settings at runtime)
+   * @param {string} id
+   * @param {Object} data
+   */
+  updateThread: async (id, data) => {
+    try {
+      const endpoint = ENDPOINTS.THREADS.UPDATE(id);
+      const response = await apiClient.patch(endpoint.path, data);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  /**
    * Delete a chat thread
    * @param {string} id 
    */
