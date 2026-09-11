@@ -5,6 +5,7 @@ import {
   getThreadById,
   updateThread,
   deleteThread,
+  getMessageDetails,
 } from "../controllers/threadController.js";
 import { loggedIn } from "../middleware/auth.js";
 
@@ -15,6 +16,7 @@ router.use(loggedIn);
 
 router.post("/", createThread);
 router.get("/", getAllThreads);
+router.get("/:threadId/messages/:messageId/details", getMessageDetails);
 router.get("/:threadId", getThreadById);
 router.patch("/:threadId", updateThread);
 router.delete("/:threadId", deleteThread);

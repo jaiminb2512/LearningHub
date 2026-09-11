@@ -32,6 +32,11 @@ export const ENDPOINTS = {
             method: 'GET',
             baseUrl: API_BASE_URL,
         }),
+        GET_MESSAGE_DETAILS: (threadId, messageId) => ({
+            path: `/threads/${threadId}/messages/${messageId}/details`,
+            method: 'GET',
+            baseUrl: API_BASE_URL,
+        }),
         CREATE: {
             path: '/threads',
             method: 'POST',

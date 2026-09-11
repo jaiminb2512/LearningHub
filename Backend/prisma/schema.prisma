@@ -63,6 +63,10 @@ model Message {
   outputTokens Int?
   totalTokens  Int?
   sequence     Int     @default(0)
+  /// Full prompt text sent to the model for this assistant turn
+  promptText   String?
+  /// AI setting used when this assistant reply was generated
+  aiSettingId  String?
 
   // Link AI responses to user questions
   questionId String?
@@ -71,11 +75,13 @@ model Message {
 
   createdAt DateTime @default(now())
   thread    Thread   @relation(fields: [threadId], references: [threadId], onDelete: Cascade)
+  aiSetting AiSetting? @relation(fields: [aiSettingId], references: [aiSettingId], onDelete: SetNull)
 
   documents Document[] @relation("MessageDocuments")
 
   @@index([threadId])
   @@index([questionId])
+  @@index([aiSettingId])
 }
 
 model SystemPrompt {
@@ -182,8 +188,9 @@ model AiSetting {
 
   createdAt DateTime @default(now())
 
-  user    User     @relation("UserAiSettings", fields: [userId], references: [userId], onDelete: Cascade)
-  threads Thread[]
+  user     User      @relation("UserAiSettings", fields: [userId], references: [userId], onDelete: Cascade)
+  threads  Thread[]
+  messages Message[]
 
   @@index([userId])
 }

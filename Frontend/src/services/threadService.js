@@ -33,6 +33,21 @@ const threadService = {
   },
 
   /**
+   * Get message turn details (user input, AI prompt, output, settings)
+   * @param {string} threadId
+   * @param {string} messageId
+   */
+  getMessageDetails: async (threadId, messageId) => {
+    try {
+      const endpoint = ENDPOINTS.THREADS.GET_MESSAGE_DETAILS(threadId, messageId);
+      const response = await apiClient.get(endpoint.path);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  /**
    * Create a new chat thread
    * @param {Object} threadData { title, model, provider }
    */

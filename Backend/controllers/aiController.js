@@ -130,6 +130,8 @@ export const generate = async (req, res) => {
         totalTokens: response.response_metadata?.tokenUsage?.totalTokens || 0,
         sequence: nextSequence + 1,
         questionId: userMessage.messageId,
+        promptText,
+        aiSettingId: threadData.aiSettingId || null,
       },
     });
 
@@ -243,6 +245,8 @@ export const stream = async (req, res) => {
         totalTokens: inputTokens + outputTokens,
         sequence: nextSequence + 1,
         questionId: userMessage.messageId,
+        promptText,
+        aiSettingId: threadData.aiSettingId || null,
       },
     });
 

@@ -39,6 +39,7 @@ import {
   Settings as SettingsIcon,
   Close as CloseIcon,
   MenuBook as BookIcon,
+  SwapVert as MessageDetailIcon,
 } from "@mui/icons-material";
 
 import aiService from "../../services/aiService";
@@ -50,6 +51,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import CodeBlock from "./LazyCodeBlock";
 import ChatBooksPanel from "./ChatBooksPanel";
+import ChatMessageDetailPanel from "./ChatMessageDetailPanel";
 
 const UsageHistoryChart = lazy(() => import("./UsageHistoryChart"));
 
@@ -63,7 +65,7 @@ const settingsFormFromJson = (json = {}) => ({
 
 /* ---------------- MAIN COMPONENT ---------------- */
 
-const AIChatContainer = ({ chatId }) => {
+const AIChatContainer = ({ chatId, showChatHeader = true }) => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -78,6 +80,12 @@ const AIChatContainer = ({ chatId }) => {
   const [promptPanelWidth, setPromptPanelWidth] = useState(400);
   const [showBooksPanel, setShowBooksPanel] = useState(false);
   const [booksPanelWidth, setBooksPanelWidth] = useState(420);
+  const [showMessagePanel, setShowMessagePanel] = useState(false);
+  const [messagePanelWidth, setMessagePanelWidth] = useState(420);
+  const [selectedMessageId, setSelectedMessageId] = useState(null);
+  const [messageDetails, setMessageDetails] = useState(null);
+  const [messageDetailsLoading, setMessageDetailsLoading] = useState(false);
+  const [messageDetailsError, setMessageDetailsError] = useState("");
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptForm, setPromptForm] = useState({
     name: "",
@@ -97,8 +105,11 @@ const AIChatContainer = ({ chatId }) => {
   const recognitionRef = useRef(null);
   const isResizingPrompt = useRef(false);
   const isResizingBooks = useRef(false);
+  const isResizingMessage = useRef(false);
+  const pendingAiInputRef = useRef("");
 
   const messagesEndRef = useRef(null);
+  const layoutRef = useRef(null);
 
   const maxWidth = "1024px";
 
@@ -239,11 +250,19 @@ const AIChatContainer = ({ chatId }) => {
               hour: "2-digit",
               minute: "2-digit",
             }),
+            model: m.model || null,
+            provider: m.provider || null,
+            inputTokens: m.inputTokens ?? null,
+            outputTokens: m.outputTokens ?? null,
+            totalTokens: m.totalTokens ?? null,
+            questionId: m.questionId || null,
           }));
 
           setMessages(mapped);
+          setSelectedMessageId(null);
         } else {
           setMessages([]);
+          setSelectedMessageId(null);
         }
       } catch (err) {
         console.error("Thread load error", err);
@@ -279,6 +298,7 @@ const AIChatContainer = ({ chatId }) => {
     setMessages((prev) => [...prev, userMsg]);
     setInputValue("");
     setIsTyping(true);
+    pendingAiInputRef.current = "";
 
     const abortController = new AbortController();
 
@@ -308,6 +328,7 @@ const AIChatContainer = ({ chatId }) => {
                 minute: "2-digit",
               }),
               isStreaming: true,
+              aiInput: pendingAiInputRef.current || "",
             },
           ]);
           messageAdded = true;
@@ -341,6 +362,14 @@ const AIChatContainer = ({ chatId }) => {
         (event) => {
           if (event?.type === "prompt" && event.prompt) {
             setLastTurnPrompt(event.prompt);
+            pendingAiInputRef.current = event.prompt;
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === aiMsgId || (msg.sender === "ai" && msg.isStreaming)
+                  ? { ...msg, aiInput: event.prompt }
+                  : msg
+              )
+            );
           }
         }
       );
@@ -375,7 +404,13 @@ const AIChatContainer = ({ chatId }) => {
     }
   };
 
-  const handleClearChat = () => setMessages([]);
+  const handleClearChat = () => {
+    setMessages([]);
+    setSelectedMessageId(null);
+    setShowMessagePanel(false);
+    setMessageDetails(null);
+    setMessageDetailsError("");
+  };
 
   const handleOpenUsage = async () => {
     if (!chatId) return;
@@ -403,11 +438,18 @@ const AIChatContainer = ({ chatId }) => {
         const next = Math.min(Math.max(window.innerWidth - e.clientX, 280), maxW);
         setBooksPanelWidth(next);
       }
+      if (isResizingMessage.current) {
+        const maxW = Math.min(720, Math.floor(window.innerWidth * 0.7));
+        const left = layoutRef.current?.getBoundingClientRect().left ?? 0;
+        const next = Math.min(Math.max(e.clientX - left, 280), maxW);
+        setMessagePanelWidth(next);
+      }
     };
     const onUp = () => {
-      if (isResizingPrompt.current || isResizingBooks.current) {
+      if (isResizingPrompt.current || isResizingBooks.current || isResizingMessage.current) {
         isResizingPrompt.current = false;
         isResizingBooks.current = false;
+        isResizingMessage.current = false;
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
       }
@@ -449,6 +491,82 @@ const AIChatContainer = ({ chatId }) => {
     setShowBooksPanel(true);
   };
 
+  const handleToggleMessagePanel = () => {
+    if (showMessagePanel) {
+      setShowMessagePanel(false);
+      return;
+    }
+    if (!selectedMessageId && messages.length > 0) {
+      const lastUser = [...messages].reverse().find((m) => m.sender === "user");
+      setSelectedMessageId(lastUser?.id || messages[messages.length - 1].id);
+    }
+    setShowMessagePanel(true);
+  };
+
+  const handleSelectUserMessage = (messageId) => {
+    setSelectedMessageId(messageId);
+    setShowMessagePanel(true);
+  };
+
+  useEffect(() => {
+    const fetchMessageDetails = async () => {
+      if (!showMessagePanel || !chatId || !selectedMessageId) {
+        return;
+      }
+
+      // Temp client-side ids (Date.now) are not in DB yet
+      if (typeof selectedMessageId === "number" || String(selectedMessageId).length < 30) {
+        const selected = messages.find((m) => m.id === selectedMessageId);
+        const index = messages.findIndex((m) => m.id === selectedMessageId);
+        const aiMsg =
+          selected?.sender === "user"
+            ? messages.slice(index + 1).find((m) => m.sender === "ai") || null
+            : selected;
+        const userMsg =
+          selected?.sender === "user"
+            ? selected
+            : [...messages].slice(0, index).reverse().find((m) => m.sender === "user") || null;
+
+        setMessageDetails({
+          userInput: userMsg?.text || "",
+          aiInput: aiMsg?.aiInput || lastTurnPrompt || "",
+          aiOutput: aiMsg?.text || "",
+          model: aiMsg?.model || null,
+          provider: aiMsg?.provider || null,
+          inputTokens: aiMsg?.inputTokens ?? null,
+          outputTokens: aiMsg?.outputTokens ?? null,
+          totalTokens: aiMsg?.totalTokens ?? null,
+          aiSetting: currentAiSetting,
+        });
+        setMessageDetailsError("");
+        setMessageDetailsLoading(false);
+        return;
+      }
+
+      setMessageDetailsLoading(true);
+      setMessageDetailsError("");
+      try {
+        const res = await threadService.getMessageDetails(chatId, selectedMessageId);
+        setMessageDetails(res.data || null);
+      } catch (err) {
+        console.error("Message details fetch error", err);
+        setMessageDetails(null);
+        setMessageDetailsError(err?.response?.data?.message || "Failed to load message details");
+      } finally {
+        setMessageDetailsLoading(false);
+      }
+    };
+
+    fetchMessageDetails();
+  }, [
+    showMessagePanel,
+    chatId,
+    selectedMessageId,
+    messages,
+    lastTurnPrompt,
+    currentAiSetting,
+  ]);
+
   const handleStartResizePrompt = (e) => {
     e.preventDefault();
     isResizingPrompt.current = true;
@@ -459,6 +577,13 @@ const AIChatContainer = ({ chatId }) => {
   const handleStartResizeBooks = (e) => {
     e.preventDefault();
     isResizingBooks.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  const handleStartResizeMessage = (e) => {
+    e.preventDefault();
+    isResizingMessage.current = true;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   };
@@ -613,6 +738,7 @@ const AIChatContainer = ({ chatId }) => {
       }}
     >
       {/* HEADER */}
+      {showChatHeader ? (
       <Box
         sx={{
           p: 1.5,
@@ -646,6 +772,17 @@ const AIChatContainer = ({ chatId }) => {
         </Box>
 
         <Box sx={{ display: "flex", gap: 1 }}>
+          <Tooltip title={showMessagePanel ? "Hide message details" : "Message input / output"}>
+            <IconButton
+              onClick={handleToggleMessagePanel}
+              size="small"
+              color="primary"
+              sx={showMessagePanel ? { bgcolor: "action.selected" } : undefined}
+            >
+              <MessageDetailIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+
           <Tooltip title={showPromptPanel ? "Hide system prompt" : "System prompt"}>
             <span>
               <IconButton
@@ -695,8 +832,30 @@ const AIChatContainer = ({ chatId }) => {
           </Tooltip>
         </Box>
       </Box>
+      ) : null}
 
-      <Box sx={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+      <Box ref={layoutRef} sx={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+        {showMessagePanel ? (
+          <ChatMessageDetailPanel
+            width={messagePanelWidth}
+            onClose={() => setShowMessagePanel(false)}
+            onStartResize={handleStartResizeMessage}
+            loading={messageDetailsLoading}
+            error={messageDetailsError}
+            inputText={messageDetails?.userInput || ""}
+            aiInputText={messageDetails?.aiInput || ""}
+            outputText={messageDetails?.aiOutput || ""}
+            aiSetting={messageDetails?.aiSetting || currentAiSetting}
+            messageMeta={{
+              model: messageDetails?.model,
+              provider: messageDetails?.provider,
+              inputTokens: messageDetails?.inputTokens,
+              outputTokens: messageDetails?.outputTokens,
+              totalTokens: messageDetails?.totalTokens,
+            }}
+          />
+        ) : null}
+
         <Box
           sx={{
             flex: 1,
@@ -754,6 +913,7 @@ const AIChatContainer = ({ chatId }) => {
         ) : (
           messages.map((msg) => {
             const isUser = msg.sender === "user";
+            const isSelected = isUser && selectedMessageId === msg.id;
 
             return (
               <Box
@@ -764,9 +924,17 @@ const AIChatContainer = ({ chatId }) => {
                   justifyContent: "center",
                   py: 3,
                   px: 2,
-                  bgcolor: isUser ? "transparent" : "action.hover",
+                  bgcolor: isSelected
+                    ? "action.selected"
+                    : isUser
+                      ? "transparent"
+                      : "action.hover",
                   borderBottom: isUser ? "none" : 1,
                   borderColor: "divider",
+                  outline: isSelected ? "2px solid" : "none",
+                  outlineColor: "primary.main",
+                  outlineOffset: -2,
+                  transition: "background-color 0.15s",
                 }}
               >
                 <Box
@@ -777,21 +945,41 @@ const AIChatContainer = ({ chatId }) => {
                     gap: 3,
                   }}
                 >
-                  <Avatar
-                    sx={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: "4px",
-                      bgcolor: isUser ? "primary.main" : "secondary.main",
-                      fontSize: "0.9rem",
-                    }}
-                  >
-                    {isUser ? (
-                      <PersonIcon fontSize="small" />
-                    ) : (
+                  {isUser ? (
+                    <Tooltip title="View message details">
+                      <Avatar
+                        onClick={() => handleSelectUserMessage(msg.id)}
+                        sx={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: "4px",
+                          bgcolor: "primary.main",
+                          fontSize: "0.9rem",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                          outline: isSelected ? "2px solid" : "none",
+                          outlineColor: "primary.light",
+                          outlineOffset: 2,
+                          "&:hover": { opacity: 0.9, boxShadow: 2 },
+                        }}
+                      >
+                        <PersonIcon fontSize="small" />
+                      </Avatar>
+                    </Tooltip>
+                  ) : (
+                    <Avatar
+                      sx={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: "4px",
+                        bgcolor: "secondary.main",
+                        fontSize: "0.9rem",
+                        flexShrink: 0,
+                      }}
+                    >
                       <RobotIcon fontSize="small" />
-                    )}
-                  </Avatar>
+                    </Avatar>
+                  )}
 
                   <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Typography
@@ -935,7 +1123,10 @@ const AIChatContainer = ({ chatId }) => {
                         <Tooltip title={speakingMessageId === msg.id ? "Stop Listening" : "Read Aloud (TTS)"}>
                           <IconButton
                             size="small"
-                            onClick={() => speakText(msg.text, msg.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              speakText(msg.text, msg.id);
+                            }}
                             sx={{
                               color: speakingMessageId === msg.id ? "primary.main" : "text.secondary",
                               bgcolor: speakingMessageId === msg.id ? "primary.lighter" : "transparent",

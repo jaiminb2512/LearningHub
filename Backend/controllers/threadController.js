@@ -248,6 +248,110 @@ export const updateThread = async (req, res) => {
 };
 
 /**
+ * @desc    Get message turn details (user input, AI prompt, output, settings)
+ * @route   GET /api/threads/:threadId/messages/:messageId/details
+ * @access  Private
+ */
+export const getMessageDetails = async (req, res) => {
+  try {
+    const { threadId, messageId } = req.params;
+    const userId = req.user.userId;
+
+    const thread = await prisma.thread.findFirst({
+      where: { threadId, userId },
+      select: { threadId: true },
+    });
+
+    if (!thread) {
+      return sendResponse(res, 404, "Thread not found");
+    }
+
+    const message = await prisma.message.findFirst({
+      where: { messageId, threadId },
+      include: {
+        aiSetting: {
+          select: {
+            aiSettingId: true,
+            name: true,
+            settingsJson: true,
+          },
+        },
+        question: true,
+        answers: {
+          orderBy: { sequence: "asc" },
+          take: 1,
+          include: {
+            aiSetting: {
+              select: {
+                aiSettingId: true,
+                name: true,
+                settingsJson: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!message) {
+      return sendResponse(res, 404, "Message not found");
+    }
+
+    let userMessage = null;
+    let assistantMessage = null;
+
+    if (message.role === "user") {
+      userMessage = message;
+      assistantMessage = message.answers?.[0] || null;
+    } else {
+      assistantMessage = message;
+      userMessage = message.question || null;
+      if (!userMessage && message.questionId) {
+        userMessage = await prisma.message.findFirst({
+          where: { messageId: message.questionId, threadId },
+        });
+      }
+    }
+
+    // Prefer settings linked on the assistant message; fall back to thread setting
+    let aiSetting = assistantMessage?.aiSetting || null;
+    if (!aiSetting) {
+      const threadWithSetting = await prisma.thread.findFirst({
+        where: { threadId, userId },
+        include: {
+          aiSetting: {
+            select: {
+              aiSettingId: true,
+              name: true,
+              settingsJson: true,
+            },
+          },
+        },
+      });
+      aiSetting = threadWithSetting?.aiSetting || null;
+    }
+
+    return sendResponse(res, 200, "Message details fetched successfully", {
+      userMessageId: userMessage?.messageId || null,
+      assistantMessageId: assistantMessage?.messageId || null,
+      userInput: userMessage?.content || "",
+      aiInput: assistantMessage?.promptText || "",
+      aiOutput: assistantMessage?.content || "",
+      model: assistantMessage?.model || userMessage?.model || null,
+      provider: assistantMessage?.provider || userMessage?.provider || null,
+      inputTokens: assistantMessage?.inputTokens ?? null,
+      outputTokens: assistantMessage?.outputTokens ?? null,
+      totalTokens: assistantMessage?.totalTokens ?? null,
+      aiSetting,
+      createdAt: assistantMessage?.createdAt || userMessage?.createdAt || null,
+    });
+  } catch (error) {
+    console.error("getMessageDetails error:", error);
+    return sendResponse(res, 500, "Failed to fetch message details", { error: error.message });
+  }
+};
+
+/**
  * @desc    Delete a thread
  * @route   DELETE /api/threads/:threadId
  * @access  Private
