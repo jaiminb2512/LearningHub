@@ -90,7 +90,7 @@ export async function listNotes({
   await assertBookOwned({ userId, bookId });
 
   const safePage = Math.max(1, parseInt(page, 10) || 1);
-  const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+  const safeLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
   const skip = (safePage - 1) * safeLimit;
 
   const where = {
@@ -101,13 +101,13 @@ export async function listNotes({
     ...(section?.trim() ? { section: section.trim() } : {}),
     ...(q?.trim()
       ? {
-          OR: [
-            { title: { contains: q.trim(), mode: "insensitive" } },
-            { content: { contains: q.trim(), mode: "insensitive" } },
-            { summary: { contains: q.trim(), mode: "insensitive" } },
-            { section: { contains: q.trim(), mode: "insensitive" } },
-          ],
-        }
+        OR: [
+          { title: { contains: q.trim(), mode: "insensitive" } },
+          { content: { contains: q.trim(), mode: "insensitive" } },
+          { summary: { contains: q.trim(), mode: "insensitive" } },
+          { section: { contains: q.trim(), mode: "insensitive" } },
+        ],
+      }
       : {}),
   };
 
