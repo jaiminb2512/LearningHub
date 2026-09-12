@@ -120,11 +120,6 @@ const ChatMessageDetailPanel = ({
                 multiline
                 minRows={6}
                 InputProps={{ readOnly: true }}
-                helperText={
-                  aiInputText
-                    ? "Prompt sent to the model for this turn"
-                    : "Not stored for this message yet (send a new message after migration)"
-                }
                 sx={monoFieldSx}
               />
               <TextField
@@ -204,10 +199,9 @@ const ChatMessageDetailPanel = ({
                   </Typography>
                   <Typography variant="body2">
                     {messageMeta?.inputTokens != null || messageMeta?.outputTokens != null
-                      ? `${messageMeta?.inputTokens ?? 0} / ${messageMeta?.outputTokens ?? 0} / ${
-                          messageMeta?.totalTokens ??
-                          (messageMeta?.inputTokens || 0) + (messageMeta?.outputTokens || 0)
-                        }`
+                      ? `${messageMeta?.inputTokens ?? 0} / ${messageMeta?.outputTokens ?? 0} / ${messageMeta?.totalTokens ??
+                      (messageMeta?.inputTokens || 0) + (messageMeta?.outputTokens || 0)
+                      }`
                       : "—"}
                   </Typography>
                 </Box>

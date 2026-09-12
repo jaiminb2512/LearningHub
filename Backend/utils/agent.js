@@ -1,7 +1,8 @@
 import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import dotenv from "dotenv";
 import { DEFAULT_AI_SETTINGS } from "./aiConfig.js";
-import { createBookTool } from "./aiTools.js";
+import { createBookTool, listBooksTool, getBookTool, updateBookTool } from "./aiTools.js";
+import { softDeleteBook } from "../services/bookService.js";
 
 dotenv.config();
 
@@ -35,7 +36,7 @@ export const streamMessage = async function* (
   userId,
   threadId
 ) {
-  const tools = [createBookTool(userId, threadId)];
+  const tools = [createBookTool(userId, threadId), listBooksTool(userId), updateBookTool(userId), getBookTool(userId)];
 
   const chat = new ChatGoogleGenerativeAI({
     model: model || DEFAULT_AI_SETTINGS.model,

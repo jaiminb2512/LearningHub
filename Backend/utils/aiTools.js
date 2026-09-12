@@ -1,5 +1,5 @@
 import { DuckDuckGoSearch } from "@langchain/community/tools/duckduckgo_search";
-import { createBook } from "../services/bookService.js";
+import { createBook, listBooks, getBook, updateBook } from "../services/bookService.js";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 
@@ -50,6 +50,39 @@ export const createBookTool = (userId, threadId) => {
                 threadId,
                 sourceType: "AI_CHAT",
             });
+        },
+    });
+};
+
+export const listBooksTool = (userId) => {
+    return new DynamicStructuredTool({
+        name: "list_books",
+        description: "List all books for the user",
+        schema: z.object({}),
+        func: async () => {
+            return await listBooks({ userId });
+        },
+    });
+};
+
+export const getBookTool = (userId) => {
+    return new DynamicStructuredTool({
+        name: "get_book",
+        description: "Get a book by its ID",
+        schema: z.object({ bookId: z.string() }),
+        func: async ({ bookId }) => {
+            return await getBook({ userId, bookId });
+        },
+    });
+};
+
+export const updateBookTool = (userId) => {
+    return new DynamicStructuredTool({
+        name: "update_book",
+        description: "Update a book by its ID",
+        schema: z.object({ bookId: z.string(), title: z.string(), description: z.string(), summary: z.string() }),
+        func: async ({ bookId, title, description, summary }) => {
+            return await updateBook({ userId, bookId, title, description, summary });
         },
     });
 };
