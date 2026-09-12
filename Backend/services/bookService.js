@@ -120,11 +120,11 @@ export async function listBooks({
     ...(status ? { status } : {}),
     ...(q?.trim()
       ? {
-          OR: [
-            { title: { contains: q.trim(), mode: "insensitive" } },
-            { description: { contains: q.trim(), mode: "insensitive" } },
-          ],
-        }
+        OR: [
+          { title: { contains: q.trim(), mode: "insensitive" } },
+          { description: { contains: q.trim(), mode: "insensitive" } },
+        ],
+      }
       : {}),
   };
 

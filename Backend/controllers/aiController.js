@@ -2,7 +2,7 @@ import { AI_PROVIDERS, DEFAULT_AI_SETTINGS } from "../utils/aiConfig.js";
 import sendResponse from "../utils/response.js";
 import { generateMessage, streamMessage, generateEmbedding } from "../utils/agent.js";
 import prisma from "../dbConnect/prismaClient.js";
-import { HumanMessage, AIMessage } from "@langchain/core/messages";
+import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 import { encode } from "gpt-tokenizer";
 import { prompt } from "../utils/systemPrompts.js";
 import { randomUUID } from "node:crypto";
@@ -101,7 +101,11 @@ export const generate = async (req, res) => {
     const historyMessages = existingMessages.slice(-10);
     const formattedMessages = [
       ...historyMessages.map((m) =>
-        m.role === "assistant" ? new AIMessage(m.content) : new HumanMessage(m.content)
+        m.role === "assistant"
+          ? new AIMessage(m.content)
+          : m.role === "tool"
+            ? new ToolMessage(m.content)
+            : new HumanMessage(m.content)
       ),
       new HumanMessage(message),
     ];
@@ -182,10 +186,14 @@ export const stream = async (req, res) => {
     });
     const nextSequence = existingMessages.length + 1;
 
-    const historyMessages = existingMessages.slice(-10);
+    const historyMessages = existingMessages.slice(-1);
     const formattedMessages = [
       ...historyMessages.map((m) =>
-        m.role === "assistant" ? new AIMessage(m.content) : new HumanMessage(m.content)
+        m.role === "assistant"
+          ? new AIMessage(m.content)
+          : m.role === "tool"
+            ? new ToolMessage(m.content)
+            : new HumanMessage(m.content)
       ),
       new HumanMessage(message),
     ];
@@ -206,19 +214,10 @@ export const stream = async (req, res) => {
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
-    // Send full prompt for this turn so UI can display it
-    res.write(
-      `data: ${JSON.stringify({
-        type: "prompt",
-        prompt: promptText,
-        settings: aiSettings,
-      })}\n\n`
-    );
-
-    const responseStream = await streamMessage(promptText, formattedMessages, provider, model, {
+    const responseStream = await streamMessage(promptText, formattedMessages, model, {
       temperature: aiSettings.temperature,
       maxOutputTokens: aiSettings.maxOutputTokens,
-    });
+    }, req.user.userId, threadId);
 
     let fullContent = "";
 
