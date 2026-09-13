@@ -63,9 +63,50 @@ const settingsFormFromJson = (json = {}) => ({
   provider: json.provider || DEFAULT_AI_SETTINGS_FORM.provider,
 });
 
+const TruncatedTextMessage = ({ text, maxLength = 300 }) => {
+  const [expanded, setExpanded] = useState(false);
+  if (!text || text.length <= maxLength) {
+    return (
+      <Typography
+        variant="body1"
+        sx={{
+          whiteSpace: "pre-wrap",
+          lineHeight: 1.6,
+          color: "text.primary",
+        }}
+      >
+        {text}
+      </Typography>
+    );
+  }
+  const displayText = expanded ? text : text.slice(0, maxLength) + "...";
+  return (
+    <Box>
+      <Typography
+        variant="body1"
+        sx={{
+          whiteSpace: "pre-wrap",
+          lineHeight: 1.6,
+          color: "text.primary",
+        }}
+      >
+        {displayText}
+      </Typography>
+      <Button
+        size="small"
+        disableRipple
+        sx={{ mt: 0.5, p: 0, minWidth: 0, textTransform: "none", fontSize: "0.85rem" }}
+        onClick={() => setExpanded(!expanded)}
+      >
+        {expanded ? "Show less" : "Read more"}
+      </Button>
+    </Box>
+  );
+};
+
 /* ---------------- MAIN COMPONENT ---------------- */
 
-const AIChatContainer = ({ chatId, showChatHeader = true }) => {
+const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -710,67 +751,9 @@ const AIChatContainer = ({ chatId, showChatHeader = true }) => {
   const canSavePrompt = Boolean(promptForm.name.trim() && promptForm.prompt.trim());
   const canEditAiOptions = Boolean(selectedAiSettingId);
 
-  if (isLoadingThread) {
-    return (
-      <Box
-        sx={{
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          bgcolor: "background.paper",
-        }}
-      >
-        <CircularProgress size={36} />
-      </Box>
-    );
-  }
-
-  return (
-    <Box
-      sx={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        bgcolor: "background.paper",
-        color: "text.primary",
-        fontFamily: "inherit",
-      }}
-    >
-      {/* HEADER */}
-      {showChatHeader ? (
-      <Box
-        sx={{
-          p: 1.5,
-          px: 3,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          borderBottom: 1,
-          borderColor: "divider",
-          bgcolor: (theme) =>
-            theme.palette.mode === "light"
-              ? "rgba(255, 255, 255, 0.8)"
-              : "rgba(30, 30, 30, 0.8)",
-          backdropFilter: "blur(8px)",
-          zIndex: 10,
-        }}
-      >
-        <Box sx={{ minWidth: 0 }}>
-          <Typography
-            variant="subtitle1"
-            fontWeight={600}
-            sx={{ display: "flex", alignItems: "center", gap: 1 }}
-          >
-            <RobotIcon sx={{ fontSize: 20, color: "primary.main" }} />
-            LearningHub
-          </Typography>
-          <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", maxWidth: { xs: 180, sm: 420 } }}>
-            {currentPrompt?.name ? `Prompt: ${currentPrompt.name}` : "No system prompt selected"}
-            {currentAiSetting?.name ? ` · Settings: ${currentAiSetting.name}` : " · Settings: Default"}
-          </Typography>
-        </Box>
-
+  useEffect(() => {
+    if (onSetHeaderActions) {
+      onSetHeaderActions(
         <Box sx={{ display: "flex", gap: 1 }}>
           <Tooltip title={showMessagePanel ? "Hide message details" : "Message input / output"}>
             <IconButton
@@ -831,8 +814,46 @@ const AIChatContainer = ({ chatId, showChatHeader = true }) => {
             </IconButton>
           </Tooltip>
         </Box>
+      );
+    }
+  }, [
+    onSetHeaderActions,
+    showMessagePanel,
+    showPromptPanel,
+    showBooksPanel,
+    currentPrompt,
+    chatId,
+    // Add these dependencies to ensure buttons correctly reflect state
+  ]);
+
+  if (isLoadingThread) {
+    return (
+      <Box
+        sx={{
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          bgcolor: "background.paper",
+        }}
+      >
+        <CircularProgress size={36} />
       </Box>
-      ) : null}
+    );
+  }
+
+  return (
+    <Box
+      sx={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        bgcolor: "background.paper",
+        color: "text.primary",
+        fontFamily: "inherit",
+      }}
+    >
+
 
       <Box ref={layoutRef} sx={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
         {showMessagePanel ? (
@@ -913,7 +934,7 @@ const AIChatContainer = ({ chatId, showChatHeader = true }) => {
         ) : (
           messages.map((msg) => {
             const isUser = msg.sender === "user";
-            const isSelected = isUser && selectedMessageId === msg.id;
+            const isSelected = selectedMessageId === msg.id;
 
             return (
               <Box
@@ -924,16 +945,9 @@ const AIChatContainer = ({ chatId, showChatHeader = true }) => {
                   justifyContent: "center",
                   py: 3,
                   px: 2,
-                  bgcolor: isSelected
-                    ? "action.selected"
-                    : isUser
-                      ? "transparent"
-                      : "action.hover",
+                  bgcolor: isUser ? "transparent" : "action.hover",
                   borderBottom: isUser ? "none" : 1,
                   borderColor: "divider",
-                  outline: isSelected ? "2px solid" : "none",
-                  outlineColor: "primary.main",
-                  outlineOffset: -2,
                   transition: "background-color 0.15s",
                 }}
               >
@@ -967,20 +981,27 @@ const AIChatContainer = ({ chatId, showChatHeader = true }) => {
                       </Avatar>
                     </Tooltip>
                   ) : (
-                    <Avatar
-                      sx={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: "4px",
-                        bgcolor: "secondary.main",
-                        fontSize: "0.9rem",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <RobotIcon fontSize="small" />
-                    </Avatar>
+                    <Tooltip title="View message details">
+                      <Avatar
+                        onClick={() => handleSelectUserMessage(msg.id)}
+                        sx={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: "4px",
+                          bgcolor: "secondary.main",
+                          fontSize: "0.9rem",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                          outline: isSelected ? "2px solid" : "none",
+                          outlineColor: "primary.main",
+                          outlineOffset: 2,
+                          "&:hover": { opacity: 0.9, boxShadow: 2 },
+                        }}
+                      >
+                        <RobotIcon fontSize="small" />
+                      </Avatar>
+                    </Tooltip>
                   )}
-
                   <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Typography
                       variant="body2"
@@ -995,16 +1016,7 @@ const AIChatContainer = ({ chatId, showChatHeader = true }) => {
                     </Typography>
 
                     {isUser ? (
-                      <Typography
-                        variant="body1"
-                        sx={{
-                          whiteSpace: "pre-wrap",
-                          lineHeight: 1.6,
-                          color: "text.primary",
-                        }}
-                      >
-                        {msg.text}
-                      </Typography>
+                      <TruncatedTextMessage text={msg.text} />
                     ) : (
                       <Box
                         sx={{

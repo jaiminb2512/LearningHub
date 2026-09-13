@@ -214,49 +214,56 @@ export const stream = async (req, res) => {
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
-    const responseStream = await streamMessage(promptText, formattedMessages, model, {
-      temperature: aiSettings.temperature,
-      maxOutputTokens: aiSettings.maxOutputTokens,
-    }, req.user.userId, threadId);
+    res.write(`data: ${JSON.stringify({ type: "prompt", prompt: promptText })}\n\n`);
 
     let fullContent = "";
 
-    for await (const chunk of responseStream) {
-      const content = chunk?.content || "";
-      fullContent += content;
-      res.write(`data: ${JSON.stringify({ type: "content", content })}\n\n`);
-    }
+    try {
+      const responseStream = await streamMessage(promptText, formattedMessages, model, {
+        temperature: aiSettings.temperature,
+        maxOutputTokens: aiSettings.maxOutputTokens,
+      }, req.user.userId, threadId);
 
-    const tokenPromptText =
-      promptText + " " + formattedMessages.map((m) => m.content).join(" ");
-    const inputTokens = encode(tokenPromptText).length;
-    const outputTokens = encode(fullContent).length;
+      for await (const chunk of responseStream) {
+        const content = chunk?.content || "";
+        fullContent += content;
+        res.write(`data: ${JSON.stringify({ type: "content", content })}\n\n`);
+      }
+    } catch (streamErr) {
+      console.error("Stream generation error:", streamErr);
+      res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);
+    } finally {
+      const tokenPromptText =
+        promptText + " " + formattedMessages.map((m) => m.content).join(" ");
+      const inputTokens = encode(tokenPromptText).length;
+      const outputTokens = encode(fullContent).length;
 
-    await prisma.message.create({
-      data: {
-        threadId,
-        role: "assistant",
-        content: fullContent,
-        model,
-        provider,
-        inputTokens,
-        outputTokens,
-        totalTokens: inputTokens + outputTokens,
-        sequence: nextSequence + 1,
-        questionId: userMessage.messageId,
-        promptText,
-        aiSettingId: threadData.aiSettingId || null,
-      },
-    });
-
-    if (aiSettings.ragEnabled) {
-      const embedding = await generateEmbedding(fullContent);
-      await saveDocumentEmbedding({
-        userId: req.user.userId,
-        threadId,
-        messageId: userMessage.messageId,
-        embedding,
+      await prisma.message.create({
+        data: {
+          threadId,
+          role: "assistant",
+          content: fullContent,
+          model,
+          provider,
+          inputTokens,
+          outputTokens,
+          totalTokens: inputTokens + outputTokens,
+          sequence: nextSequence + 1,
+          questionId: userMessage.messageId,
+          promptText,
+          aiSettingId: threadData.aiSettingId || null,
+        },
       });
+
+      if (aiSettings.ragEnabled && fullContent) {
+        const embedding = await generateEmbedding(fullContent);
+        await saveDocumentEmbedding({
+          userId: req.user.userId,
+          threadId,
+          messageId: userMessage.messageId,
+          embedding,
+        });
+      }
     }
 
     res.write("data: [DONE]\n\n");

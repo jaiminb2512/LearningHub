@@ -52,6 +52,9 @@ export const streamMessage = async function* (
     ...messages,
   ];
 
+  let anyContentYielded = false;
+  const toolCallSummaries = [];
+
   while (true) {
     const stream = await chat.stream(currentMessages);
     let aiMessage = null;
@@ -67,6 +70,7 @@ export const streamMessage = async function* (
       // Yield content chunks to the controller (ensure we only yield strings, not objects)
       if (chunk.content) {
         if (typeof chunk.content === "string") {
+          anyContentYielded = true;
           yield chunk;
         } else if (Array.isArray(chunk.content)) {
           const textContent = chunk.content
@@ -74,6 +78,7 @@ export const streamMessage = async function* (
             .map((c) => c.text)
             .join("");
           if (textContent) {
+            anyContentYielded = true;
             yield { ...chunk, content: textContent };
           }
         }
@@ -91,6 +96,7 @@ export const streamMessage = async function* (
           try {
             // execute tool and append the result to messages
             const result = await tool.invoke(toolCall.args);
+            toolCallSummaries.push(`${tool.name} completed successfully.`);
             currentMessages.push({
               role: "tool",
               tool_call_id: toolCall.id,
@@ -98,6 +104,7 @@ export const streamMessage = async function* (
               content: typeof result === "string" ? result : JSON.stringify(result),
             });
           } catch (error) {
+            toolCallSummaries.push(`${tool.name} failed: ${error.message}`);
             currentMessages.push({
               role: "tool",
               tool_call_id: toolCall.id,
@@ -112,6 +119,13 @@ export const streamMessage = async function* (
       // No tools called, the LLM has finished its final response
       break;
     }
+  }
+
+  // Guard against a tool-only turn where the model's final response has no
+  // textual content: without this, the assistant message would be saved
+  // with empty content, looking like the AI output was never saved.
+  if (!anyContentYielded && toolCallSummaries.length > 0) {
+    yield { content: toolCallSummaries.join(" ") };
   }
 };
 

@@ -12,39 +12,26 @@ const AIChatDetailPage = () => {
     const { chatId } = useParams();
     const navigate = useNavigate();
     const { setHeaderActions } = useHeaderActions();
-    const [showChatHeader, setShowChatHeader] = useState(true);
+    const [chatActions, setChatActions] = useState(null);
 
     useEffect(() => {
         setHeaderActions(
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Tooltip title={showChatHeader ? 'Hide chat header' : 'Show chat header'}>
-                    <IconButton
-                        size="small"
-                        color="primary"
-                        onClick={() => setShowChatHeader((prev) => !prev)}
-                        sx={showChatHeader ? undefined : { bgcolor: 'action.selected' }}
-                    >
-                        {showChatHeader ? (
-                            <KeyboardArrowUpIcon fontSize="small" />
-                        ) : (
-                            <KeyboardArrowDownIcon fontSize="small" />
-                        )}
-                    </IconButton>
-                </Tooltip>
                 <Button
                     variant="outlined"
                     startIcon={<ArrowBackIcon />}
                     onClick={() => navigate('/ai-chat')}
                     size="small"
-                    sx={{ height: 38, textTransform: 'none', fontWeight: 600 }}
+                    sx={{ height: 38, textTransform: 'none', fontWeight: 600, mr: 1 }}
                 >
                     Back to Chats
                 </Button>
+                {chatActions}
             </Box>
         );
 
         return () => setHeaderActions(null);
-    }, [navigate, setHeaderActions, showChatHeader]);
+    }, [navigate, setHeaderActions, chatActions]);
 
     return (
         <Box sx={{
@@ -62,7 +49,7 @@ const AIChatDetailPage = () => {
                         </Box>
                     }
                 >
-                    <AIChatContainer chatId={chatId} showChatHeader={showChatHeader} />
+                    <AIChatContainer chatId={chatId} onSetHeaderActions={setChatActions} />
                 </Suspense>
             </Box>
         </Box>

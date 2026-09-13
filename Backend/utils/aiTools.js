@@ -99,29 +99,29 @@ export const deleteBookTool = (userId) => {
     });
 };
 
-export const createNoteTool = (userId, bookId) => {
+export const createNoteTool = (userId) => {
     return new DynamicStructuredTool({
         name: "create_note",
-        description: "Create a new note in a book",
-        schema: z.object({ title: z.string(), content: z.string() }),
-        func: async ({ title, content }) => {
+        description: "Create a new note in a book.",
+        schema: z.object({ bookId: z.string().describe("The ID of the book"), title: z.string(), content: z.string() }),
+        func: async ({ bookId, title, content }) => {
             return await createNote({ userId, bookId, title, content });
         },
     });
 };
 
-export const listNotesTool = (userId, bookId) => {
+export const listNotesTool = (userId) => {
     return new DynamicStructuredTool({
         name: "list_notes",
-        description: "List all notes in a book",
-        schema: z.object({}),
-        func: async () => {
+        description: "List all notes in a book.",
+        schema: z.object({ bookId: z.string().describe("The ID of the book") }),
+        func: async ({ bookId }) => {
             return await listNotes({ userId, bookId });
         },
     });
 };
 
-export const getNoteTool = (userId, noteId) => {
+export const getNoteTool = (userId) => {
     return new DynamicStructuredTool({
         name: "get_note",
         description: "Get a note by its ID",
@@ -132,34 +132,34 @@ export const getNoteTool = (userId, noteId) => {
     });
 };
 
-export const updateNoteTool = (userId, noteId) => {
+export const updateNoteTool = (userId) => {
     return new DynamicStructuredTool({
         name: "update_note",
         description: "Update a note by its ID",
-        schema: z.object({ noteId: z.string(), title: z.string(), content: z.string() }),
+        schema: z.object({ noteId: z.string(), title: z.string(), content: z.string().optional() }),
         func: async ({ noteId, title, content }) => {
             return await updateNote({ userId, noteId, title, content });
         },
     });
 };
 
-export const deleteNoteTool = (userId, noteId) => {
+export const deleteNoteTool = (userId) => {
     return new DynamicStructuredTool({
         name: "delete_note",
         description: "Delete a note by its ID",
         schema: z.object({ noteId: z.string() }),
         func: async ({ noteId }) => {
-            return await deleteNote({ userId, noteId });
+            return await softDeleteNote({ userId, noteId });
         },
     });
 };
 
-export const reorderNotesTool = (userId, bookId) => {
+export const reorderNotesTool = (userId) => {
     return new DynamicStructuredTool({
         name: "reorder_notes",
         description: "Reorder the notes in a book",
-        schema: z.object({ items: z.array(z.object({ noteId: z.string(), orderIndex: z.number() })) }),
-        func: async ({ items }) => {
+        schema: z.object({ bookId: z.string().describe("The ID of the book"), items: z.array(z.object({ noteId: z.string(), orderIndex: z.number() })) }),
+        func: async ({ bookId, items }) => {
             return await reorderNotes({ userId, bookId, items });
         },
     });
