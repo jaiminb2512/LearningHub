@@ -27,6 +27,7 @@ model User {
   books                Book[]         @relation("UserBooks")
   notes                Note[]         @relation("UserNotes")
   aiSettings           AiSetting[]    @relation("UserAiSettings")
+  knowledgeSources     KnowledgeSource[] @relation("UserKnowledgeSources")
 }
 
 model Thread {
@@ -47,6 +48,7 @@ model Thread {
   documents Document[] @relation("ThreadDocuments")
   books     Book[]     @relation("ThreadBooks")
   notes     Note[]     @relation("ThreadNotes")
+  knowledgeLinks ThreadKnowledgeSource[]
 
   @@index([userId])
   @@index([aiSettingId])
@@ -193,4 +195,62 @@ model AiSetting {
   messages Message[]
 
   @@index([userId])
+}
+
+/// User-owned uploaded file / knowledge item (not tied to a single thread)
+model KnowledgeSource {
+  knowledgeSourceId String   @id @default(uuid())
+  userId            String
+  bookId            String?
+  originalName      String
+  mimeType          String
+  sizeBytes         Int
+  storagePath       String?
+  status            String   @default("PROCESSING") // PROCESSING | READY | FAILED
+  errorMessage      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user    User                     @relation("UserKnowledgeSources", fields: [userId], references: [userId], onDelete: Cascade)
+  chunks  KnowledgeChunk[]
+  threads ThreadKnowledgeSource[]
+
+  @@index([userId])
+  @@index([userId, status])
+}
+
+/// Many-to-many: attach the same knowledge file to one or more threads
+model ThreadKnowledgeSource {
+  id                String   @id @default(uuid())
+  threadId          String
+  knowledgeSourceId String
+  attachedBy        String?
+  attachedAt        DateTime @default(now())
+  isActive          Boolean  @default(true)
+
+  thread          Thread          @relation(fields: [threadId], references: [threadId], onDelete: Cascade)
+  knowledgeSource KnowledgeSource @relation(fields: [knowledgeSourceId], references: [knowledgeSourceId], onDelete: Cascade)
+
+  @@unique([threadId, knowledgeSourceId])
+  @@index([threadId])
+  @@index([knowledgeSourceId])
+  @@index([threadId, isActive])
+}
+
+model KnowledgeChunk {
+  knowledgeChunkId String                       @id @default(uuid())
+  sourceId         String
+  userId           String
+  chunkIndex       Int
+  content          String
+  embedding        Unsupported("vector(3072)")?
+  embeddingModel   String                       @default("gemini-embedding-001")
+  tokenCount       Int?
+  createdAt        DateTime                     @default(now())
+
+  source KnowledgeSource @relation(fields: [sourceId], references: [knowledgeSourceId], onDelete: Cascade)
+
+  @@index([sourceId])
+  @@index([userId])
+  @@index([sourceId, chunkIndex])
 }

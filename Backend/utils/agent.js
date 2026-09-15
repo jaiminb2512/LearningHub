@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import { DEFAULT_AI_SETTINGS } from "./aiConfig.js";
 import { createBookTool, listBooksTool, getBookTool, updateBookTool, deleteBookTool, createNoteTool, listNotesTool, getNoteTool, updateNoteTool, deleteNoteTool, reorderNotesTool } from "./aiTools.js";
 import { softDeleteBook } from "../services/bookService.js";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -136,4 +137,15 @@ export const generateEmbedding = async (text) => {
   });
   const vector = await embeddings.embedQuery(text);
   return vector;
+};
+
+export const countTokens = async (text) => {
+  const ai = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY,
+  });
+  const tokenResult = await ai.models.countTokens({
+    model: "gemini-embedding-001",
+    contents: text,
+  });
+  return tokenResult;
 };

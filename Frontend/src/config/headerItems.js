@@ -2,6 +2,7 @@ import SparklesIcon from '@mui/icons-material/AutoAwesome';
 import SettingsIcon from '@mui/icons-material/Settings';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import TuneIcon from '@mui/icons-material/Tune';
+import FolderIcon from '@mui/icons-material/Folder';
 
 export const mainNavItems = [
     {
@@ -17,6 +18,13 @@ export const mainNavItems = [
         icon: MenuBookIcon,
         path: '/books',
         activePaths: ['/books'],
+    },
+    {
+        id: 'knowledge-files',
+        label: 'Knowledge Files',
+        icon: FolderIcon,
+        path: '/manage/knowledge-files',
+        activePaths: ['/manage/knowledge-files'],
     },
     {
         id: 'ai-settings',

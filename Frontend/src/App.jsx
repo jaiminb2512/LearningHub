@@ -7,6 +7,7 @@ import SystemPromptPage from './pages/SystemPromptPage.jsx';
 const AIChatListPage = lazy(() => import('./pages/AIChatListPage.jsx'));
 const AIChatDetailPage = lazy(() => import('./pages/AIChatDetailPage.jsx'));
 const AiSettingsPage = lazy(() => import('./pages/AiSettingsPage.jsx'));
+const KnowledgeFilesPage = lazy(() => import('./pages/KnowledgeFilesPage.jsx'));
 const BooksListPage = lazy(() => import('./pages/BooksListPage.jsx'));
 const BookFormPage = lazy(() => import('./pages/BookFormPage.jsx'));
 const BookDetailPage = lazy(() => import('./pages/BookDetailPage.jsx'));
@@ -100,6 +101,7 @@ function AppContent({ themeMode, toggleTheme }) {
                 <Route path="/" element={<Navigate to="/ai-chat" replace />} />
                 <Route path="/manage/system-prompts" element={<SystemPromptPage />} />
                 <Route path="/manage/ai-settings" element={<AiSettingsPage />} />
+                <Route path="/manage/knowledge-files" element={<KnowledgeFilesPage />} />
                 <Route path="/ai-chat" element={<AIChatListPage />} />
                 <Route path="/ai-chat/:chatId" element={<AIChatDetailPage />} />
                 <Route path="/books" element={<BooksListPage />} />

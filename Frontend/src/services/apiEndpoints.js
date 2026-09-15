@@ -191,6 +191,44 @@ export const ENDPOINTS = {
             baseUrl: API_BASE_URL,
         }),
     },
+
+    KNOWLEDGE: {
+        UPLOAD: {
+            path: '/knowledge/upload',
+            method: 'POST',
+            baseUrl: API_BASE_URL,
+        },
+        GET_LIBRARY: {
+            path: '/knowledge',
+            method: 'GET',
+            baseUrl: API_BASE_URL,
+        },
+        GET_THREAD: (threadId) => ({
+            path: `/knowledge/thread/${threadId}`,
+            method: 'GET',
+            baseUrl: API_BASE_URL,
+        }),
+        ATTACH: (threadId, knowledgeSourceId) => ({
+            path: `/knowledge/thread/${threadId}/attach/${knowledgeSourceId}`,
+            method: 'POST',
+            baseUrl: API_BASE_URL,
+        }),
+        DETACH: (threadId, knowledgeSourceId) => ({
+            path: `/knowledge/thread/${threadId}/${knowledgeSourceId}`,
+            method: 'DELETE',
+            baseUrl: API_BASE_URL,
+        }),
+        DELETE: (knowledgeSourceId) => ({
+            path: `/knowledge/${knowledgeSourceId}`,
+            method: 'DELETE',
+            baseUrl: API_BASE_URL,
+        }),
+        GENERATE_EMBEDDINGS: (knowledgeSourceId) => ({
+            path: `/knowledge/generate-embeddings/${knowledgeSourceId}`,
+            method: 'POST',
+            baseUrl: API_BASE_URL,
+        }),
+    },
 };
 
 export { API_BASE_URL };

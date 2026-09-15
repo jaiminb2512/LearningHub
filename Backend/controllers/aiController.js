@@ -255,7 +255,7 @@ export const stream = async (req, res) => {
         },
       });
 
-      if (aiSettings.ragEnabled && fullContent) {
+      if (aiSettings.ragEnabled && fullContent && false) {
         const embedding = await generateEmbedding(fullContent);
         await saveDocumentEmbedding({
           userId: req.user.userId,

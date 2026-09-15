@@ -40,6 +40,7 @@ import {
   Close as CloseIcon,
   MenuBook as BookIcon,
   SwapVert as MessageDetailIcon,
+  AttachFile as AttachFileIcon,
 } from "@mui/icons-material";
 
 import aiService from "../../services/aiService";
@@ -52,6 +53,7 @@ import remarkGfm from "remark-gfm";
 import CodeBlock from "./LazyCodeBlock";
 import ChatBooksPanel from "./ChatBooksPanel";
 import ChatMessageDetailPanel from "./ChatMessageDetailPanel";
+import ChatKnowledgePanel from "./ChatKnowledgePanel";
 
 const UsageHistoryChart = lazy(() => import("./UsageHistoryChart"));
 
@@ -121,6 +123,8 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
   const [promptPanelWidth, setPromptPanelWidth] = useState(400);
   const [showBooksPanel, setShowBooksPanel] = useState(false);
   const [booksPanelWidth, setBooksPanelWidth] = useState(420);
+  const [showKnowledgePanel, setShowKnowledgePanel] = useState(false);
+  const [knowledgePanelWidth, setKnowledgePanelWidth] = useState(380);
   const [showMessagePanel, setShowMessagePanel] = useState(false);
   const [messagePanelWidth, setMessagePanelWidth] = useState(420);
   const [selectedMessageId, setSelectedMessageId] = useState(null);
@@ -146,6 +150,7 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
   const recognitionRef = useRef(null);
   const isResizingPrompt = useRef(false);
   const isResizingBooks = useRef(false);
+  const isResizingKnowledge = useRef(false);
   const isResizingMessage = useRef(false);
   const pendingAiInputRef = useRef("");
 
@@ -479,6 +484,11 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
         const next = Math.min(Math.max(window.innerWidth - e.clientX, 280), maxW);
         setBooksPanelWidth(next);
       }
+      if (isResizingKnowledge.current) {
+        const maxW = Math.min(720, Math.floor(window.innerWidth * 0.7));
+        const next = Math.min(Math.max(window.innerWidth - e.clientX, 280), maxW);
+        setKnowledgePanelWidth(next);
+      }
       if (isResizingMessage.current) {
         const maxW = Math.min(720, Math.floor(window.innerWidth * 0.7));
         const left = layoutRef.current?.getBoundingClientRect().left ?? 0;
@@ -487,9 +497,15 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
       }
     };
     const onUp = () => {
-      if (isResizingPrompt.current || isResizingBooks.current || isResizingMessage.current) {
+      if (
+        isResizingPrompt.current ||
+        isResizingBooks.current ||
+        isResizingKnowledge.current ||
+        isResizingMessage.current
+      ) {
         isResizingPrompt.current = false;
         isResizingBooks.current = false;
+        isResizingKnowledge.current = false;
         isResizingMessage.current = false;
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
@@ -511,6 +527,7 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
       return;
     }
     setShowBooksPanel(false);
+    setShowKnowledgePanel(false);
     setPromptForm({
       name: currentPrompt?.name || "",
       prompt: currentPrompt?.prompt || "",
@@ -529,7 +546,18 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
       return;
     }
     setShowPromptPanel(false);
+    setShowKnowledgePanel(false);
     setShowBooksPanel(true);
+  };
+
+  const handleToggleKnowledgePanel = () => {
+    if (showKnowledgePanel) {
+      setShowKnowledgePanel(false);
+      return;
+    }
+    setShowPromptPanel(false);
+    setShowBooksPanel(false);
+    setShowKnowledgePanel(true);
   };
 
   const handleToggleMessagePanel = () => {
@@ -618,6 +646,13 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
   const handleStartResizeBooks = (e) => {
     e.preventDefault();
     isResizingBooks.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  const handleStartResizeKnowledge = (e) => {
+    e.preventDefault();
+    isResizingKnowledge.current = true;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   };
@@ -789,6 +824,20 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
             >
               <BookIcon fontSize="small" />
             </IconButton>
+          </Tooltip>
+
+          <Tooltip title={showKnowledgePanel ? "Hide knowledge files" : "Knowledge files"}>
+            <span>
+              <IconButton
+                onClick={handleToggleKnowledgePanel}
+                size="small"
+                color="primary"
+                disabled={!chatId}
+                sx={showKnowledgePanel ? { bgcolor: "action.selected" } : undefined}
+              >
+                <AttachFileIcon fontSize="small" />
+              </IconButton>
+            </span>
           </Tooltip>
 
           <Tooltip title="Change AI settings">
@@ -1401,6 +1450,15 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
             width={booksPanelWidth}
             onClose={() => setShowBooksPanel(false)}
             onStartResize={handleStartResizeBooks}
+          />
+        ) : null}
+
+        {showKnowledgePanel ? (
+          <ChatKnowledgePanel
+            chatId={chatId}
+            width={knowledgePanelWidth}
+            onClose={() => setShowKnowledgePanel(false)}
+            onStartResize={handleStartResizeKnowledge}
           />
         ) : null}
 
