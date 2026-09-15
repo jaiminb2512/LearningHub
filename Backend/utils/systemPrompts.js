@@ -34,6 +34,17 @@ export const prompt = async (userId, threadId, userMessage, { ragEnabled = true 
     return null;
   }
 
+  const knowledgeFiles = await prisma.threadKnowledgeSource.findMany({
+    where: { threadId },
+  });
+
+  let relatedKnowledgeFiles = []
+  for (const knowledgeFile of knowledgeFiles) {
+    relatedKnowledgeFiles.push(knowledgeFile.knowledgeSourceId);
+  }
+
+  console.log(relatedKnowledgeFiles);
+
   if (!ragEnabled) {
     return promptText;
   }

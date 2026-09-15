@@ -21,10 +21,17 @@ const handleError = (res, error, fallbackMessage) => {
 export const uploadKnowledgeHandler = async (req, res) => {
   try {
     const threadId = req.body?.threadId || null;
+    // attachToThread defaults to true when threadId is present
+    const attachToThread =
+      req.body?.attachToThread === undefined
+        ? Boolean(threadId)
+        : String(req.body.attachToThread).toLowerCase() !== "false";
+
     const source = await createKnowledgeFromUpload({
       userId: req.user.userId,
       threadId,
       file: req.file,
+      attachToThread,
     });
     return sendResponse(res, 201, "File uploaded successfully", source);
   } catch (error) {

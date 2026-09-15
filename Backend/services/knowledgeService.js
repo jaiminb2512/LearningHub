@@ -29,15 +29,12 @@ const assertThreadOwned = async (userId, threadId) => {
 
 export const createKnowledgeFromUpload = async ({
   userId,
-  threadId,
+  threadId = null,
   file,
+  attachToThread = Boolean(threadId),
 }) => {
   if (!file) {
     throw new KnowledgeServiceError("File is required");
-  }
-
-  if (threadId) {
-    await assertThreadOwned(userId, threadId);
   }
 
   const relativePath = path
@@ -52,28 +49,85 @@ export const createKnowledgeFromUpload = async ({
       sizeBytes: file.size || 0,
       storagePath: relativePath,
       status: "UPLOADED",
-      ...(threadId
-        ? {
-          threads: {
-            create: {
-              threadId,
-              attachedBy: userId,
-              isActive: true,
-            },
-          },
-        }
-        : {}),
     },
-    include: threadId
-      ? {
-        threads: {
-          where: { threadId },
-        },
-      }
-      : undefined,
   });
 
+  // Optional: link uploaded file to a thread
+  if (attachToThread && threadId) {
+    const link = await linkKnowledgeSourceToThread({
+      userId,
+      threadId,
+      knowledgeSourceId: source.knowledgeSourceId,
+    });
+    return {
+      ...source,
+      threadLink: link,
+    };
+  }
+
   return source;
+};
+
+/**
+ * Create or reactivate a ThreadKnowledgeSource row.
+ * Reusable for upload-to-thread and attach-existing-file flows.
+ */
+export const linkKnowledgeSourceToThread = async ({
+  userId,
+  threadId,
+  knowledgeSourceId,
+  verifyOwnership = true,
+}) => {
+  if (!threadId) {
+    throw new KnowledgeServiceError("threadId is required");
+  }
+  if (!knowledgeSourceId) {
+    throw new KnowledgeServiceError("knowledgeSourceId is required");
+  }
+
+  if (verifyOwnership) {
+    await assertThreadOwned(userId, threadId);
+
+    const source = await prisma.knowledgeSource.findFirst({
+      where: { knowledgeSourceId, userId },
+      select: { knowledgeSourceId: true },
+    });
+    if (!source) {
+      throw new KnowledgeServiceError("Knowledge source not found", 404);
+    }
+  }
+
+  const link = await prisma.threadKnowledgeSource.upsert({
+    where: {
+      threadId_knowledgeSourceId: {
+        threadId,
+        knowledgeSourceId,
+      },
+    },
+    create: {
+      threadId,
+      knowledgeSourceId,
+      attachedBy: userId || null,
+      isActive: true,
+    },
+    update: {
+      isActive: true,
+      attachedBy: userId || null,
+      attachedAt: new Date(),
+    },
+    include: {
+      knowledgeSource: true,
+    },
+  });
+
+  return {
+    linkId: link.id,
+    attachedAt: link.attachedAt,
+    isActive: link.isActive,
+    threadId: link.threadId,
+    knowledgeSourceId: link.knowledgeSourceId,
+    ...link.knowledgeSource,
+  };
 };
 
 export const listThreadKnowledge = async ({ userId, threadId }) => {
@@ -111,44 +165,12 @@ export const attachKnowledgeToThread = async ({
   threadId,
   knowledgeSourceId,
 }) => {
-  await assertThreadOwned(userId, threadId);
-
-  const source = await prisma.knowledgeSource.findFirst({
-    where: { knowledgeSourceId, userId },
+  return linkKnowledgeSourceToThread({
+    userId,
+    threadId,
+    knowledgeSourceId,
+    verifyOwnership: true,
   });
-  if (!source) {
-    throw new KnowledgeServiceError("Knowledge source not found", 404);
-  }
-
-  const link = await prisma.threadKnowledgeSource.upsert({
-    where: {
-      threadId_knowledgeSourceId: {
-        threadId,
-        knowledgeSourceId,
-      },
-    },
-    create: {
-      threadId,
-      knowledgeSourceId,
-      attachedBy: userId,
-      isActive: true,
-    },
-    update: {
-      isActive: true,
-      attachedBy: userId,
-      attachedAt: new Date(),
-    },
-    include: {
-      knowledgeSource: true,
-    },
-  });
-
-  return {
-    linkId: link.id,
-    attachedAt: link.attachedAt,
-    isActive: link.isActive,
-    ...link.knowledgeSource,
-  };
 };
 
 export const detachKnowledgeFromThread = async ({

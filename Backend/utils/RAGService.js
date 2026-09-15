@@ -30,3 +30,5 @@ export const semanticSearch = async (userId, queryEmbedding, limit = 5) => {
 
     return results;
 };
+
+
