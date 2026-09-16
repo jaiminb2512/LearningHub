@@ -22,6 +22,7 @@ export const DEFAULT_AI_SETTINGS = {
   temperature: 0.7,
   maxOutputTokens: 2048,
   ragEnabled: true,
+  knowledgeRagEnabled: true,
   model: "gemini-3.1-flash-lite-preview",
   provider: "google",
 };
@@ -38,6 +39,7 @@ export const normalizeAiSettings = (raw = {}) => {
       ? Math.min(8192, Math.max(64, Math.round(maxOutputTokens)))
       : DEFAULT_AI_SETTINGS.maxOutputTokens,
     ragEnabled: raw.ragEnabled !== false,
+    knowledgeRagEnabled: raw.knowledgeRagEnabled !== false,
     model: typeof raw.model === "string" && raw.model.trim()
       ? raw.model.trim()
       : DEFAULT_AI_SETTINGS.model,

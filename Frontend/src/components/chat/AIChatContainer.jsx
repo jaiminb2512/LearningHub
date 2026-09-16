@@ -61,6 +61,7 @@ const settingsFormFromJson = (json = {}) => ({
   temperature: json.temperature ?? DEFAULT_AI_SETTINGS_FORM.temperature,
   maxOutputTokens: json.maxOutputTokens ?? DEFAULT_AI_SETTINGS_FORM.maxOutputTokens,
   ragEnabled: json.ragEnabled !== false,
+  knowledgeRagEnabled: json.knowledgeRagEnabled !== false,
   model: json.model || DEFAULT_AI_SETTINGS_FORM.model,
   provider: json.provider || DEFAULT_AI_SETTINGS_FORM.provider,
 });
@@ -755,6 +756,7 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
           temperature: Number(aiSettingForm.temperature),
           maxOutputTokens: Number(aiSettingForm.maxOutputTokens),
           ragEnabled: Boolean(aiSettingForm.ragEnabled),
+          knowledgeRagEnabled: Boolean(aiSettingForm.knowledgeRagEnabled),
           model: aiSettingForm.model,
           provider: aiSettingForm.provider,
         },
@@ -1705,6 +1707,22 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
               <FormControlLabel
                 control={
                   <Switch
+                    checked={Boolean(aiSettingForm.knowledgeRagEnabled)}
+                    disabled={!canEditAiOptions}
+                    onChange={(e) =>
+                      setAiSettingForm((prev) => ({
+                        ...prev,
+                        knowledgeRagEnabled: e.target.checked,
+                      }))
+                    }
+                  />
+                }
+                label="Knowledge files (search attached uploads)"
+              />
+
+              <FormControlLabel
+                control={
+                  <Switch
                     checked={Boolean(aiSettingForm.ragEnabled)}
                     disabled={!canEditAiOptions}
                     onChange={(e) =>
@@ -1715,7 +1733,7 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
                     }
                   />
                 }
-                label="RAG enabled (store/search vectors)"
+                label="Chat memory RAG (store/search past replies)"
               />
             </Box>
           )}

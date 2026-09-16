@@ -5,6 +5,7 @@ export const DEFAULT_AI_SETTINGS_FORM = {
   temperature: 0.7,
   maxOutputTokens: 2048,
   ragEnabled: true,
+  knowledgeRagEnabled: true,
   model: 'gemini-3.1-flash-lite-preview',
   provider: 'google',
 };

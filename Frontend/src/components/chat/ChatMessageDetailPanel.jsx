@@ -187,7 +187,15 @@ const ChatMessageDetailPanel = ({
                 </Box>
                 <Box>
                   <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                    RAG
+                    Knowledge files
+                  </Typography>
+                  <Typography variant="body2">
+                    {settings.knowledgeRagEnabled === false ? "Off" : "On"}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                    Chat memory RAG
                   </Typography>
                   <Typography variant="body2">
                     {settings.ragEnabled === false ? "Off" : "On"}

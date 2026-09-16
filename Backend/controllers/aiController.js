@@ -70,6 +70,7 @@ export const generate = async (req, res) => {
 
     let promptText = await prompt(req.user.userId, threadId, message, {
       ragEnabled: aiSettings.ragEnabled,
+      knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
     });
 
     if (!promptText) {
@@ -177,6 +178,7 @@ export const stream = async (req, res) => {
 
     const promptText = await prompt(req.user.userId, threadId, message, {
       ragEnabled: aiSettings.ragEnabled,
+      knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
     });
     if (!promptText) return sendResponse(res, 400, "Thread not found or system prompt missing");
 

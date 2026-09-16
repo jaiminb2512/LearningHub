@@ -108,6 +108,7 @@ const AiSettingsPage = () => {
       temperature: json.temperature ?? DEFAULT_AI_SETTINGS_FORM.temperature,
       maxOutputTokens: json.maxOutputTokens ?? DEFAULT_AI_SETTINGS_FORM.maxOutputTokens,
       ragEnabled: json.ragEnabled !== false,
+      knowledgeRagEnabled: json.knowledgeRagEnabled !== false,
       model: json.model || DEFAULT_AI_SETTINGS_FORM.model,
       provider: json.provider || DEFAULT_AI_SETTINGS_FORM.provider,
     });
@@ -142,6 +143,7 @@ const AiSettingsPage = () => {
           temperature: Number(form.temperature),
           maxOutputTokens: Number(form.maxOutputTokens),
           ragEnabled: Boolean(form.ragEnabled),
+          knowledgeRagEnabled: Boolean(form.knowledgeRagEnabled),
           model: form.model,
           provider: form.provider,
         },
@@ -220,7 +222,7 @@ const AiSettingsPage = () => {
                 <ListItemButton onClick={() => openEdit(item)}>
                   <ListItemText
                     primary={item.name}
-                    secondary={`Model: ${json.model || '—'} · Temp: ${json.temperature ?? '—'} · Tokens: ${json.maxOutputTokens ?? '—'} · RAG: ${json.ragEnabled === false ? 'Off' : 'On'}`}
+                    secondary={`Model: ${json.model || '—'} · Temp: ${json.temperature ?? '—'} · Tokens: ${json.maxOutputTokens ?? '—'} · Files: ${json.knowledgeRagEnabled === false ? 'Off' : 'On'} · Chat RAG: ${json.ragEnabled === false ? 'Off' : 'On'}`}
                   />
                 </ListItemButton>
               </ListItem>
@@ -293,11 +295,21 @@ const AiSettingsPage = () => {
           <FormControlLabel
             control={
               <Switch
+                checked={Boolean(form.knowledgeRagEnabled)}
+                onChange={(e) => setForm((prev) => ({ ...prev, knowledgeRagEnabled: e.target.checked }))}
+              />
+            }
+            label="Knowledge files (search attached uploads)"
+          />
+
+          <FormControlLabel
+            control={
+              <Switch
                 checked={Boolean(form.ragEnabled)}
                 onChange={(e) => setForm((prev) => ({ ...prev, ragEnabled: e.target.checked }))}
               />
             }
-            label="RAG enabled (store/search vectors)"
+            label="Chat memory RAG (store/search past replies)"
           />
         </DialogContent>
         <DialogActions>
