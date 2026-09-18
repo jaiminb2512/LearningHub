@@ -99,7 +99,7 @@ export const generate = async (req, res) => {
       },
     });
 
-    const historyMessages = existingMessages.slice(-10);
+    const historyMessages = existingMessages.slice(-1);
     const formattedMessages = [
       ...historyMessages.map((m) =>
         m.role === "assistant"

@@ -2,8 +2,14 @@ import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain
 import dotenv from "dotenv";
 import { DEFAULT_AI_SETTINGS } from "./aiConfig.js";
 import { createBookTool, listBooksTool, getBookTool, updateBookTool, deleteBookTool, createNoteTool, listNotesTool, getNoteTool, updateNoteTool, deleteNoteTool, reorderNotesTool } from "./aiTools.js";
-import { softDeleteBook } from "../services/bookService.js";
 import { GoogleGenAI } from "@google/genai";
+import {
+  StateGraph,
+  MessagesAnnotation,
+  START,
+  END,
+} from "@langchain/langgraph";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
 
 dotenv.config();
 
@@ -37,97 +43,81 @@ export const streamMessage = async function* (
   userId,
   threadId
 ) {
-  const tools = [createBookTool(userId, threadId), listBooksTool(userId), updateBookTool(userId), getBookTool(userId), deleteBookTool(userId), createNoteTool(userId), listNotesTool(userId), getNoteTool(userId), updateNoteTool(userId), deleteNoteTool(userId), reorderNotesTool(userId)];
+  const tools = [
+    createBookTool(userId, threadId),
+    listBooksTool(userId),
+    updateBookTool(userId),
+    getBookTool(userId),
+    deleteBookTool(userId),
+
+    createNoteTool(userId),
+    listNotesTool(userId),
+    getNoteTool(userId),
+    updateNoteTool(userId),
+    deleteNoteTool(userId),
+    reorderNotesTool(userId),
+  ];
 
   const chat = new ChatGoogleGenerativeAI({
     model: model || DEFAULT_AI_SETTINGS.model,
     apiKey: process.env.GEMINI_API_KEY,
     streamUsage: true,
-    temperature: options.temperature ?? DEFAULT_AI_SETTINGS.temperature,
-    maxOutputTokens: options.maxOutputTokens ?? DEFAULT_AI_SETTINGS.maxOutputTokens,
+    temperature:
+      options.temperature ?? DEFAULT_AI_SETTINGS.temperature,
+    maxOutputTokens:
+      options.maxOutputTokens ??
+      DEFAULT_AI_SETTINGS.maxOutputTokens,
   }).bindTools(tools);
 
-  // Prepare standard messages array
-  const currentMessages = [
-    { role: "system", content: systemPrompt },
+  const callModel = async (state) => {
+    const response = await chat.invoke(state.messages);
+
+    return {
+      messages: [response],
+    };
+  };
+
+  const toolNode = new ToolNode(tools);
+
+  const shouldContinue = (state) => {
+    const lastMessage =
+      state.messages[state.messages.length - 1];
+
+    console.log("state", state);
+
+    return lastMessage.tool_calls?.length
+      ? "tools"
+      : END;
+  };
+
+  const graph = new StateGraph(MessagesAnnotation)
+    .addNode("agent", callModel)
+    .addNode("tools", toolNode)
+    .addEdge(START, "agent")
+    .addConditionalEdges("agent", shouldContinue, {
+      tools: "tools",
+      [END]: END,
+    })
+    .addEdge("tools", "agent")
+    .compile();
+
+  const initialMessages = [
+    {
+      role: "system",
+      content: systemPrompt,
+    },
     ...messages,
   ];
 
-  let anyContentYielded = false;
-  const toolCallSummaries = [];
+  const result = await graph.invoke({
+    messages: initialMessages,
+  });
 
-  while (true) {
-    const stream = await chat.stream(currentMessages);
-    let aiMessage = null;
+  // final response
+  const finalMessage =
+    result.messages[result.messages.length - 1];
 
-    for await (const chunk of stream) {
-      // Accumulate the chunks into a single message
-      if (!aiMessage) {
-        aiMessage = chunk;
-      } else {
-        aiMessage = aiMessage.concat(chunk);
-      }
-
-      // Yield content chunks to the controller (ensure we only yield strings, not objects)
-      if (chunk.content) {
-        if (typeof chunk.content === "string") {
-          anyContentYielded = true;
-          yield chunk;
-        } else if (Array.isArray(chunk.content)) {
-          const textContent = chunk.content
-            .filter((c) => c.type === "text")
-            .map((c) => c.text)
-            .join("");
-          if (textContent) {
-            anyContentYielded = true;
-            yield { ...chunk, content: textContent };
-          }
-        }
-      }
-    }
-
-    currentMessages.push(aiMessage);
-
-    // If the model called any tools, execute them
-    if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
-
-      for (const toolCall of aiMessage.tool_calls) {
-        const tool = tools.find((t) => t.name === toolCall.name);
-        if (tool) {
-          try {
-            // execute tool and append the result to messages
-            const result = await tool.invoke(toolCall.args);
-            toolCallSummaries.push(`${tool.name} completed successfully.`);
-            currentMessages.push({
-              role: "tool",
-              tool_call_id: toolCall.id,
-              name: tool.name,
-              content: typeof result === "string" ? result : JSON.stringify(result),
-            });
-          } catch (error) {
-            toolCallSummaries.push(`${tool.name} failed: ${error.message}`);
-            currentMessages.push({
-              role: "tool",
-              tool_call_id: toolCall.id,
-              name: tool.name,
-              content: `Error: ${error.message}`,
-            });
-          }
-        }
-      }
-      // The while loop continues, sending the tool results back to the LLM
-    } else {
-      // No tools called, the LLM has finished its final response
-      break;
-    }
-  }
-
-  // Guard against a tool-only turn where the model's final response has no
-  // textual content: without this, the assistant message would be saved
-  // with empty content, looking like the AI output was never saved.
-  if (!anyContentYielded && toolCallSummaries.length > 0) {
-    yield { content: toolCallSummaries.join(" ") };
-  }
+  yield finalMessage;
 };
 
 export const generateEmbedding = async (text) => {
