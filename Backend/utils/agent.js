@@ -25,6 +25,7 @@ import {
 } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { normalizeHitlDecision } from "./hitl.js";
+import { startSpan, finishSpan } from "../services/observabilityService.js";
 
 dotenv.config();
 
@@ -82,7 +83,7 @@ const normalizeMessagesForGemini = (messages = [], fallbackSystemPrompt = "") =>
   return [{ role: "system", content: systemContent }, ...nonSystem];
 };
 
-const buildGraph = ({ model, options, userId, threadId, systemPrompt }) => {
+const buildGraph = ({ model, options, userId, threadId, systemPrompt, traceId }) => {
   const tools = buildTools(userId, threadId);
 
   const chat = new ChatGoogleGenerativeAI({
@@ -98,11 +99,49 @@ const buildGraph = ({ model, options, userId, threadId, systemPrompt }) => {
       state.messages,
       systemPrompt
     );
-    const response = await chat.invoke(inputMessages);
-    return { messages: [response] };
+    const span = traceId ? await startSpan({
+      traceId,
+      name: "llm-generation",
+      type: "generation",
+      input: inputMessages,
+      metadata: { model, temperature: options.temperature, maxOutputTokens: options.maxOutputTokens },
+    }) : null;
+    try {
+      const response = await chat.invoke(inputMessages);
+      const usage = response?.response_metadata?.tokenUsage || response?.usage_metadata || {};
+      if (span) await finishSpan(span.spanId, {
+        output: response?.content,
+        metadata: {
+          model,
+          inputTokens: usage.promptTokens ?? usage.input_tokens ?? 0,
+          outputTokens: usage.completionTokens ?? usage.output_tokens ?? 0,
+          totalTokens: usage.totalTokens ?? usage.total_tokens ?? 0,
+        },
+      });
+      return { messages: [response] };
+    } catch (error) {
+      if (span) await finishSpan(span.spanId, { status: "ERROR", errorMessage: error.message });
+      throw error;
+    }
   };
 
-  const toolNode = new ToolNode(tools);
+  const rawToolNode = new ToolNode(tools);
+  const toolNode = async (state) => {
+    const span = traceId ? await startSpan({
+      traceId,
+      name: "tool-execution",
+      type: "tool",
+      input: state.messages?.[state.messages.length - 1]?.tool_calls || [],
+    }) : null;
+    try {
+      const result = await rawToolNode.invoke(state);
+      if (span) await finishSpan(span.spanId, { output: result?.messages });
+      return result;
+    } catch (error) {
+      if (span) await finishSpan(span.spanId, { status: "ERROR", errorMessage: error.message });
+      throw error;
+    }
+  };
 
   const shouldContinue = (state) => {
     const lastMessage = state.messages[state.messages.length - 1];
@@ -163,9 +202,10 @@ export const streamMessage = async function* (
   model,
   options = {},
   userId,
-  threadId
+  threadId,
+  traceId
 ) {
-  const graph = buildGraph({ model, options, userId, threadId, systemPrompt });
+  const graph = buildGraph({ model, options, userId, threadId, systemPrompt, traceId });
 
   const config = {
     configurable: {
@@ -204,6 +244,7 @@ export const resumeMessage = async function* ({
   options = {},
   systemPrompt = "",
   decision,
+  traceId,
 }) {
   const graph = buildGraph({
     model,
@@ -211,6 +252,7 @@ export const resumeMessage = async function* ({
     userId,
     threadId,
     systemPrompt,
+    traceId,
   });
 
   const config = {
