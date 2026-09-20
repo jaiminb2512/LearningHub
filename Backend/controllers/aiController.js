@@ -346,6 +346,16 @@ export const resume = async (req, res) => {
     const nextSequence = existingMessages.length + 1;
     const lastUserMessage = [...existingMessages].reverse().find((m) => m.role === "user");
 
+    const trace = await startTrace({
+      userId: req.user.userId,
+      threadId,
+      messageId: lastUserMessage?.messageId || null,
+      model,
+      provider,
+      input: { resumed: true, decision: hitlDecision },
+      metadata: { route: "/ai/resume", hitl: true },
+    });
+
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -366,6 +376,7 @@ export const resume = async (req, res) => {
         },
         systemPrompt,
         decision: hitlDecision,
+        traceId: trace.traceId,
       });
 
       for await (const chunk of responseStream) {
@@ -385,11 +396,18 @@ export const resume = async (req, res) => {
       }
     } catch (streamErr) {
       console.error("Resume stream error:", streamErr);
+      await finishTrace(trace.traceId, { status: "ERROR", errorMessage: streamErr.message });
       res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);
     } finally {
       if (!interrupted && fullContent) {
         const inputTokens = encode(fullContent).length;
         const outputTokens = encode(fullContent).length;
+        await finishTrace(trace.traceId, {
+          status: "SUCCESS",
+          output: fullContent,
+          inputTokens,
+          outputTokens,
+        });
 
         await prisma.message.create({
           data: {
