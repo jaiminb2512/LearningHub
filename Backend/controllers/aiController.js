@@ -8,6 +8,7 @@ import { encode } from "gpt-tokenizer";
 import { prompt } from "../utils/systemPrompts.js";
 import { randomUUID } from "node:crypto";
 import { resolveThreadAiSettings } from "../services/aiSettingService.js";
+import { startTrace, finishTrace } from "../services/observabilityService.js";
 
 const saveDocumentEmbedding = async ({ userId, threadId, messageId, embedding }) => {
   if (!Array.isArray(embedding) || embedding.length === 0) {
@@ -212,6 +213,20 @@ export const stream = async (req, res) => {
       },
     });
 
+    const trace = await startTrace({
+      userId: req.user.userId,
+      threadId,
+      messageId: userMessage.messageId,
+      model,
+      provider,
+      input: message,
+      metadata: {
+        route: "/ai/stream",
+        ragEnabled: aiSettings.ragEnabled,
+        knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
+      },
+    });
+
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -226,7 +241,7 @@ export const stream = async (req, res) => {
       const responseStream = await streamMessage(promptText, formattedMessages, model, {
         temperature: aiSettings.temperature,
         maxOutputTokens: aiSettings.maxOutputTokens,
-      }, req.user.userId, threadId);
+      }, req.user.userId, threadId, trace.traceId);
 
       for await (const chunk of responseStream) {
         if (chunk?.type === "interrupt") {
@@ -245,6 +260,7 @@ export const stream = async (req, res) => {
       }
     } catch (streamErr) {
       console.error("Stream generation error:", streamErr);
+      await finishTrace(trace.traceId, { status: "ERROR", errorMessage: streamErr.message });
       res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);
     } finally {
       if (!interrupted && fullContent) {
@@ -268,6 +284,13 @@ export const stream = async (req, res) => {
             promptText,
             aiSettingId: threadData.aiSettingId || null,
           },
+        });
+
+        await finishTrace(trace.traceId, {
+          status: "SUCCESS",
+          output: fullContent,
+          inputTokens,
+          outputTokens,
         });
 
         if (aiSettings.ragEnabled && fullContent) {
@@ -322,6 +345,17 @@ export const resume = async (req, res) => {
     });
     const nextSequence = existingMessages.length + 1;
     const lastUserMessage = [...existingMessages].reverse().find((m) => m.role === "user");
+    const hitlDecision = normalizeHitlDecision(decision);
+
+    const trace = await startTrace({
+      userId: req.user.userId,
+      threadId,
+      messageId: lastUserMessage?.messageId || null,
+      model,
+      provider,
+      input: { resumed: true, decision: hitlDecision },
+      metadata: { route: "/ai/resume", hitl: true },
+    });
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -330,7 +364,6 @@ export const resume = async (req, res) => {
 
     let fullContent = "";
     let interrupted = false;
-    const hitlDecision = normalizeHitlDecision(decision);
 
     try {
       const responseStream = resumeMessage({
@@ -343,6 +376,7 @@ export const resume = async (req, res) => {
         },
         systemPrompt,
         decision: hitlDecision,
+        traceId: trace.traceId,
       });
 
       for await (const chunk of responseStream) {
@@ -362,11 +396,18 @@ export const resume = async (req, res) => {
       }
     } catch (streamErr) {
       console.error("Resume stream error:", streamErr);
+      await finishTrace(trace.traceId, { status: "ERROR", errorMessage: streamErr.message });
       res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);
     } finally {
       if (!interrupted && fullContent) {
         const inputTokens = encode(fullContent).length;
         const outputTokens = encode(fullContent).length;
+        await finishTrace(trace.traceId, {
+          status: "SUCCESS",
+          output: fullContent,
+          inputTokens,
+          outputTokens,
+        });
 
         await prisma.message.create({
           data: {

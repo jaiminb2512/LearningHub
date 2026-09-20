@@ -13,6 +13,7 @@ const BookFormPage = lazy(() => import('./pages/BookFormPage.jsx'));
 const BookDetailPage = lazy(() => import('./pages/BookDetailPage.jsx'));
 const BookReaderPage = lazy(() => import('./pages/BookReaderPage.jsx'));
 const NoteEditorPage = lazy(() => import('./pages/NoteEditorPage.jsx'));
+const ObservabilityPage = lazy(() => import('./pages/ObservabilityPage.jsx'));
 import { lightTheme, darkTheme } from './styles/theme'
 import SidebarNavigation, { SIDEBAR_WIDTH, SIDEBAR_WIDTH_COLLAPSED } from './components/sidebar/SidebarNavigation.jsx'
 import TopHeader from './components/sidebar/TopHeader.jsx'
@@ -110,6 +111,7 @@ function AppContent({ themeMode, toggleTheme }) {
                 <Route path="/books/:bookId" element={<BookDetailPage />} />
                 <Route path="/books/:bookId/read" element={<BookReaderPage />} />
                 <Route path="/books/:bookId/notes/:noteId" element={<NoteEditorPage />} />
+                <Route path="/observability" element={<ObservabilityPage />} />
               </Route>
             </Routes>
           </Suspense>

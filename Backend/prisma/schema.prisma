@@ -27,7 +27,7 @@ model User {
   books                Book[]         @relation("UserBooks")
   notes                Note[]         @relation("UserNotes")
   aiSettings           AiSetting[]    @relation("UserAiSettings")
-  knowledgeSources     KnowledgeSource[] @relation("UserKnowledgeSources")
+  knowledgeSources     KnowledgeSource[] @relation("UserKnowledgeSources")\n  aiTraces             AiTrace[]
 }
 
 model Thread {
@@ -253,4 +253,55 @@ model KnowledgeChunk {
   @@index([sourceId])
   @@index([userId])
   @@index([sourceId, chunkIndex])
+}
+
+model AiTrace {
+  traceId        String      @id @default(uuid())
+  userId         String
+  threadId       String?
+  messageId      String?
+  name           String      @default("learninghub-ai")
+  status         String      @default("RUNNING")
+  model          String?
+  provider       String?
+  inputTokens    Int         @default(0)
+  outputTokens   Int         @default(0)
+  totalTokens    Int         @default(0)
+  latencyMs      Int?
+  inputPreview   String?
+  outputPreview  String?
+  errorMessage   String?
+  metadata       Json?
+  startedAt      DateTime    @default(now())
+  endedAt        DateTime?
+
+  user           User        @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  thread         Thread?     @relation(fields: [threadId], references: [threadId], onDelete: SetNull)
+  message        Message?    @relation(fields: [messageId], references: [messageId], onDelete: SetNull)
+  spans          AiTraceSpan[]
+
+  @@index([userId, startedAt])
+  @@index([threadId, startedAt])
+  @@index([status, startedAt])
+}
+
+model AiTraceSpan {
+  spanId        String    @id @default(uuid())
+  traceId       String
+  parentSpanId  String?
+  name          String
+  type          String
+  status        String    @default("RUNNING")
+  latencyMs     Int?
+  input         Json?
+  output        Json?
+  errorMessage  String?
+  metadata      Json?
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+
+  trace         AiTrace   @relation(fields: [traceId], references: [traceId], onDelete: Cascade)
+
+  @@index([traceId, startedAt])
+  @@index([type, startedAt])
 }
