@@ -7,10 +7,10 @@ import {
   requestConfirmation,
   requestSelective,
   requestSuggestive,
-  isHitlApproved,
   resolveSelectedIds,
   resolveSuggestion,
   rejectedToolResult,
+  gateHitlDecision,
 } from "./hitl.js";
 
 export const internetSearchTool = new DuckDuckGoSearch({
@@ -61,9 +61,12 @@ export const createBookTool = (userId, threadId) => {
         entityType: "book",
       });
 
-      if (!isHitlApproved(decision)) {
-        return rejectedToolResult("create_book", "Book creation cancelled by user.");
-      }
+      const gated = gateHitlDecision(
+        decision,
+        "create_book",
+        "Book creation cancelled by user."
+      );
+      if (gated) return gated;
 
       const finalValues = resolveSuggestion(decision, proposed);
       if (!finalValues?.title?.trim()) {
@@ -140,9 +143,12 @@ export const updateBookTool = (userId) => {
         entityId: bookId,
       });
 
-      if (!isHitlApproved(decision)) {
-        return rejectedToolResult("update_book", "Book update cancelled by user.");
-      }
+      const gated = gateHitlDecision(
+        decision,
+        "update_book",
+        "Book update cancelled by user."
+      );
+      if (gated) return gated;
 
       const finalValues = resolveSuggestion(decision, proposed);
       const result = await updateBook({
@@ -181,9 +187,12 @@ export const deleteBookTool = (userId) => {
         entityId: bookId,
       });
 
-      if (!isHitlApproved(decision)) {
-        return rejectedToolResult("delete_book", "Book deletion cancelled by user.");
-      }
+      const gated = gateHitlDecision(
+        decision,
+        "delete_book",
+        "Book deletion cancelled by user."
+      );
+      if (gated) return gated;
 
       const result = await softDeleteBook({ userId, bookId });
       return { success: true, result };
@@ -228,9 +237,12 @@ export const createNoteTool = (userId) => {
         entityType: "note",
       });
 
-      if (!isHitlApproved(decision)) {
-        return rejectedToolResult("create_note", "Note creation cancelled by user.");
-      }
+      const gated = gateHitlDecision(
+        decision,
+        "create_note",
+        "Note creation cancelled by user."
+      );
+      if (gated) return gated;
 
       const selected = resolveSelectedIds(decision, {
         defaultSelected: bookId ? [bookId] : [],
@@ -305,9 +317,12 @@ export const updateNoteTool = (userId) => {
         entityId: noteId,
       });
 
-      if (!isHitlApproved(decision)) {
-        return rejectedToolResult("update_note", "Note update cancelled by user.");
-      }
+      const gated = gateHitlDecision(
+        decision,
+        "update_note",
+        "Note update cancelled by user."
+      );
+      if (gated) return gated;
 
       const finalValues = resolveSuggestion(decision, proposed);
       const result = await updateNote({
@@ -345,9 +360,12 @@ export const deleteNoteTool = (userId) => {
         entityId: noteId,
       });
 
-      if (!isHitlApproved(decision)) {
-        return rejectedToolResult("delete_note", "Note deletion cancelled by user.");
-      }
+      const gated = gateHitlDecision(
+        decision,
+        "delete_note",
+        "Note deletion cancelled by user."
+      );
+      if (gated) return gated;
 
       const result = await softDeleteNote({ userId, noteId });
       return { success: true, result };

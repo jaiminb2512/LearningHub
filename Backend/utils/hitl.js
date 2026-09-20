@@ -8,9 +8,24 @@ export const HITL_TYPES = {
 
 /**
  * Normalize a resume payload from the UI / API.
+ *
+ * Modes:
+ * - approved (+ selected / suggestion)
+ * - rejected
+ * - userMessage: user skipped HITL and sent their own instruction
  */
 export const normalizeHitlDecision = (raw = {}) => {
-  const approved = raw.approved === true || raw.decision === "approved";
+  const userMessage =
+    typeof raw.userMessage === "string"
+      ? raw.userMessage.trim()
+      : typeof raw.message === "string" && raw.decision === "user_message"
+        ? raw.message.trim()
+        : "";
+
+  const hasUserMessage = userMessage.length > 0;
+  const approved =
+    !hasUserMessage && (raw.approved === true || raw.decision === "approved");
+
   return {
     approved,
     reason: typeof raw.reason === "string" ? raw.reason : undefined,
@@ -19,11 +34,21 @@ export const normalizeHitlDecision = (raw = {}) => {
       raw.suggestion && typeof raw.suggestion === "object" && !Array.isArray(raw.suggestion)
         ? raw.suggestion
         : null,
+    userMessage: hasUserMessage ? userMessage : "",
+    redirected: hasUserMessage,
   };
 };
 
 export const isHitlApproved = (decision) =>
   normalizeHitlDecision(decision).approved === true;
+
+export const hasHitlUserMessage = (decision) => {
+  const normalized = normalizeHitlDecision(decision);
+  return Boolean(normalized.userMessage);
+};
+
+export const getHitlUserMessage = (decision) =>
+  normalizeHitlDecision(decision).userMessage || "";
 
 /**
  * Confirmation HITL — approve / reject a proposed action.
@@ -42,6 +67,7 @@ export const requestConfirmation = ({
     toolName: toolName || action,
     message: message || `Allow ${action}?`,
     data,
+    allowUserMessage: true,
     entityType: entityType || null,
     entityId: entityId || null,
   });
@@ -78,6 +104,7 @@ export const requestSelective = ({
     allowMultiple: Boolean(allowMultiple),
     defaultSelected: (Array.isArray(defaultSelected) ? defaultSelected : []).map(String),
     data,
+    allowUserMessage: true,
     entityType: entityType || null,
     entityId: entityId || null,
   });
@@ -114,6 +141,7 @@ export const requestSuggestive = ({
     suggestion: suggestion && typeof suggestion === "object" ? suggestion : {},
     fields: normalizedFields,
     data,
+    allowUserMessage: true,
     entityType: entityType || null,
     entityId: entityId || null,
   });
@@ -156,3 +184,34 @@ export const rejectedToolResult = (action, reason = "Cancelled by user.") => ({
   action,
   message: reason,
 });
+
+/**
+ * When the user sends their own message instead of approving,
+ * cancel the tool action and pass their instruction back to the agent.
+ */
+export const userMessageToolResult = (action, userMessage) => ({
+  success: false,
+  cancelled: true,
+  redirected: true,
+  action,
+  userMessage,
+  message:
+    `User skipped "${action}" and sent this instruction instead: "${userMessage}". ` +
+    "Do not retry the same action unless they ask. Follow their instruction.",
+});
+
+/**
+ * Shared gate for every HITL tool:
+ * - if user sent a custom message → return redirect result
+ * - if not approved → return rejected result
+ * - else → null (caller continues with approved path)
+ */
+export const gateHitlDecision = (decision, action, rejectReason) => {
+  if (hasHitlUserMessage(decision)) {
+    return userMessageToolResult(action, getHitlUserMessage(decision));
+  }
+  if (!isHitlApproved(decision)) {
+    return rejectedToolResult(action, rejectReason || `${action} cancelled by user.`);
+  }
+  return null;
+};

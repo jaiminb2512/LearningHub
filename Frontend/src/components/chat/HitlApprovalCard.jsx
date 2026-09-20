@@ -3,6 +3,7 @@ import {
   Box,
   Button,
   Checkbox,
+  Divider,
   FormControlLabel,
   FormGroup,
   Paper,
@@ -23,6 +24,7 @@ export const HITL_TYPES = {
 
 /**
  * Reusable HITL approval card for confirmation / selective / suggestive interrupts.
+ * Every type includes an "anything else" free-text path.
  */
 const HitlApprovalCard = ({ interrupt, loading = false, onSubmit, onCancel }) => {
   const type = interrupt?.type || HITL_TYPES.CONFIRMATION;
@@ -38,6 +40,7 @@ const HitlApprovalCard = ({ interrupt, loading = false, onSubmit, onCancel }) =>
       ? interrupt.suggestion
       : {}),
   }));
+  const [userMessage, setUserMessage] = useState("");
 
   useEffect(() => {
     setSelected(
@@ -50,6 +53,7 @@ const HitlApprovalCard = ({ interrupt, loading = false, onSubmit, onCancel }) =>
         ? interrupt.suggestion
         : {}),
     });
+    setUserMessage("");
   }, [interrupt?.id, interrupt?.action]);
 
   const title = useMemo(() => {
@@ -91,6 +95,19 @@ const HitlApprovalCard = ({ interrupt, loading = false, onSubmit, onCancel }) =>
     onCancel?.({
       approved: false,
       reason: "Rejected by user",
+      selected: [],
+      suggestion: null,
+    });
+  };
+
+  const handleSendOwnMessage = () => {
+    const trimmed = userMessage.trim();
+    if (!trimmed) return;
+    onSubmit?.({
+      approved: false,
+      redirected: true,
+      decision: "user_message",
+      userMessage: trimmed,
       selected: [],
       suggestion: null,
     });
@@ -241,7 +258,7 @@ const HitlApprovalCard = ({ interrupt, loading = false, onSubmit, onCancel }) =>
         </Stack>
       )}
 
-      <Stack direction="row" spacing={1} justifyContent="flex-end">
+      <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ mb: 2 }}>
         <Button
           variant="outlined"
           color="inherit"
@@ -262,6 +279,39 @@ const HitlApprovalCard = ({ interrupt, loading = false, onSubmit, onCancel }) =>
             : type === HITL_TYPES.SELECTIVE
               ? "Continue"
               : "Approve"}
+        </Button>
+      </Stack>
+
+      <Divider sx={{ mb: 2 }} />
+
+      <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
+        Or tell me something else
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+        Skip this action and send your own message instead.
+      </Typography>
+      <TextField
+        value={userMessage}
+        onChange={(e) => setUserMessage(e.target.value)}
+        placeholder="Type anything else you want the AI to do…"
+        fullWidth
+        multiline
+        minRows={2}
+        disabled={loading}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSendOwnMessage();
+          }
+        }}
+      />
+      <Stack direction="row" justifyContent="flex-end" sx={{ mt: 1.5 }}>
+        <Button
+          variant="outlined"
+          onClick={handleSendOwnMessage}
+          disabled={loading || !userMessage.trim()}
+        >
+          Send message
         </Button>
       </Stack>
     </Paper>

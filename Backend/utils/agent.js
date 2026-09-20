@@ -106,7 +106,10 @@ const buildGraph = ({ model, options, userId, threadId, systemPrompt }) => {
 
   const shouldContinue = (state) => {
     const lastMessage = state.messages[state.messages.length - 1];
-    return lastMessage.tool_calls?.length ? "tools" : END;
+    if (lastMessage.tool_calls?.length) {
+      return "tools";
+    }
+    return END;
   };
 
   return new StateGraph(MessagesAnnotation)
