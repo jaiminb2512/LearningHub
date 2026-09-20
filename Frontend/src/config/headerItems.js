@@ -3,6 +3,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import TuneIcon from '@mui/icons-material/Tune';
 import FolderIcon from '@mui/icons-material/Folder';
+import MonitoringIcon from '@mui/icons-material/MonitorHeart';
 
 export const mainNavItems = [
     {
@@ -32,6 +33,13 @@ export const mainNavItems = [
         icon: TuneIcon,
         path: '/manage/ai-settings',
         activePaths: ['/manage/ai-settings'],
+    },
+    {
+        id: 'observability',
+        label: 'Observability',
+        icon: MonitoringIcon,
+        path: '/observability',
+        activePaths: ['/observability'],
     },
     {
         id: 'system-prompts',
