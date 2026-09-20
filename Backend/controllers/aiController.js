@@ -345,6 +345,7 @@ export const resume = async (req, res) => {
     });
     const nextSequence = existingMessages.length + 1;
     const lastUserMessage = [...existingMessages].reverse().find((m) => m.role === "user");
+    const hitlDecision = normalizeHitlDecision(decision);
 
     const trace = await startTrace({
       userId: req.user.userId,
@@ -363,7 +364,6 @@ export const resume = async (req, res) => {
 
     let fullContent = "";
     let interrupted = false;
-    const hitlDecision = normalizeHitlDecision(decision);
 
     try {
       const responseStream = resumeMessage({
