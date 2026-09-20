@@ -69,6 +69,11 @@ export const ENDPOINTS = {
             method: 'POST',
             baseUrl: API_BASE_URL,
         },
+        RESUME: {
+            path: '/ai/resume',
+            method: 'POST',
+            baseUrl: API_BASE_URL,
+        },
         GET_USAGE: (id) => ({
             path: `/ai/thread/${id}/usage`,
             method: 'GET',

@@ -54,6 +54,7 @@ import CodeBlock from "./LazyCodeBlock";
 import ChatBooksPanel from "./ChatBooksPanel";
 import ChatMessageDetailPanel from "./ChatMessageDetailPanel";
 import ChatKnowledgePanel from "./ChatKnowledgePanel";
+import HitlApprovalCard from "./HitlApprovalCard";
 
 const UsageHistoryChart = lazy(() => import("./UsageHistoryChart"));
 
@@ -144,6 +145,8 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
   const [selectedAiSettingId, setSelectedAiSettingId] = useState("");
   const [aiSettingForm, setAiSettingForm] = useState({ ...DEFAULT_AI_SETTINGS_FORM });
   const [aiSettingSaving, setAiSettingSaving] = useState(false);
+  const [pendingInterrupt, setPendingInterrupt] = useState(null);
+  const [hitlLoading, setHitlLoading] = useState(false);
 
   // Speech to Text (STT) & Text to Speech (TTS) States
   const [isListening, setIsListening] = useState(false);
@@ -252,9 +255,9 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
 
     // Select natural English voice if available (matching Interview platform)
     const voices = window.speechSynthesis.getVoices() || [];
-    const englishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) || 
-                         voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Online'))) ||
-                         voices.find(v => v.lang.startsWith('en'));
+    const englishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) ||
+      voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Online'))) ||
+      voices.find(v => v.lang.startsWith('en'));
     if (englishVoice) {
       utterance.voice = englishVoice;
     }
@@ -328,7 +331,7 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
   /* ---------------- SEND MESSAGE ---------------- */
 
   const handleSend = async () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || pendingInterrupt || hitlLoading) return;
 
     const text = inputValue.trim();
 
@@ -345,6 +348,7 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
     setMessages((prev) => [...prev, userMsg]);
     setInputValue("");
     setIsTyping(true);
+    setPendingInterrupt(null);
     pendingAiInputRef.current = "";
 
     const abortController = new AbortController();
@@ -357,54 +361,54 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
       let messageAdded = false;
       let updateInterval = null;
 
+      const ensureAiMessage = () => {
+        if (messageAdded) return;
+        setIsTyping(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: aiMsgId,
+            text: "",
+            sender: "ai",
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            isStreaming: true,
+            aiInput: pendingAiInputRef.current || "",
+          },
+        ]);
+        messageAdded = true;
+
+        updateInterval = setInterval(() => {
+          if (displayedText.length < fullText.length) {
+            const diff = fullText.length - displayedText.length;
+            const increment = Math.max(1, Math.ceil(diff * 0.15));
+            displayedText = fullText.substring(0, displayedText.length + increment);
+
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === aiMsgId ? { ...msg, text: displayedText } : msg
+              )
+            );
+          } else if (!isStreaming) {
+            clearInterval(updateInterval);
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === aiMsgId ? { ...msg, isStreaming: false } : msg
+              )
+            );
+          }
+        }, 25);
+      };
+
       await aiService.stream(
         chatId,
         text,
         (chunk) => {
-        // Hide thinking indicator and add message on first chunk
-        if (!messageAdded) {
-          setIsTyping(false);
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: aiMsgId,
-              text: "",
-              sender: "ai",
-              timestamp: new Date().toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-              isStreaming: true,
-              aiInput: pendingAiInputRef.current || "",
-            },
-          ]);
-          messageAdded = true;
-
-          // Start smooth typing interval
-          updateInterval = setInterval(() => {
-            if (displayedText.length < fullText.length) {
-              const diff = fullText.length - displayedText.length;
-              const increment = Math.max(1, Math.ceil(diff * 0.15));
-              displayedText = fullText.substring(0, displayedText.length + increment);
-
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === aiMsgId ? { ...msg, text: displayedText } : msg
-                )
-              );
-            } else if (!isStreaming) {
-              clearInterval(updateInterval);
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === aiMsgId ? { ...msg, isStreaming: false } : msg
-                )
-              );
-            }
-          }, 25);
-        }
-
-        fullText += chunk;
-      },
+          ensureAiMessage();
+          fullText += chunk;
+        },
         abortController.signal,
         (event) => {
           if (event?.type === "prompt" && event.prompt) {
@@ -418,13 +422,24 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
               )
             );
           }
+          if (event?.type === "interrupt" && event.interrupt) {
+            setIsTyping(false);
+            setPendingInterrupt(event.interrupt);
+          }
         }
       );
 
       isStreaming = false;
-      // If the stream was empty or finished too fast, ensure interval clears
       if (!messageAdded) setIsTyping(false);
-
+      if (messageAdded && updateInterval) {
+        // let interval finish remaining chars
+      } else if (messageAdded) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === aiMsgId ? { ...msg, isStreaming: false } : msg
+          )
+        );
+      }
     } catch (err) {
       if (err.name === 'AbortError') return;
       console.error("Stream error", err);
@@ -441,6 +456,103 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
           }),
         },
       ]);
+    }
+  };
+
+  const handleHitlDecision = async (decision) => {
+    if (!chatId || !pendingInterrupt || hitlLoading) return;
+
+    setHitlLoading(true);
+    setIsTyping(true);
+    const currentInterrupt = pendingInterrupt;
+    setPendingInterrupt(null);
+
+    const abortController = new AbortController();
+    const aiMsgId = Date.now() + 1;
+    let fullText = "";
+    let displayedText = "";
+    let isStreaming = true;
+    let messageAdded = false;
+    let updateInterval = null;
+
+    try {
+      const ensureAiMessage = () => {
+        if (messageAdded) return;
+        setIsTyping(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: aiMsgId,
+            text: "",
+            sender: "ai",
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            isStreaming: true,
+            hitlAction: currentInterrupt?.action,
+          },
+        ]);
+        messageAdded = true;
+
+        updateInterval = setInterval(() => {
+          if (displayedText.length < fullText.length) {
+            const diff = fullText.length - displayedText.length;
+            const increment = Math.max(1, Math.ceil(diff * 0.15));
+            displayedText = fullText.substring(0, displayedText.length + increment);
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === aiMsgId ? { ...msg, text: displayedText } : msg
+              )
+            );
+          } else if (!isStreaming) {
+            clearInterval(updateInterval);
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === aiMsgId ? { ...msg, isStreaming: false } : msg
+              )
+            );
+          }
+        }, 25);
+      };
+
+      await aiService.resume(
+        chatId,
+        decision,
+        (chunk) => {
+          ensureAiMessage();
+          fullText += chunk;
+        },
+        abortController.signal,
+        (event) => {
+          if (event?.type === "interrupt" && event.interrupt) {
+            setIsTyping(false);
+            setPendingInterrupt(event.interrupt);
+          }
+        }
+      );
+
+      isStreaming = false;
+      if (!messageAdded) setIsTyping(false);
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      console.error("HITL resume error", err);
+      setIsTyping(false);
+      setPendingInterrupt(currentInterrupt);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 3,
+          text: "Failed to resume after approval. Please try again.",
+          sender: "ai",
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        },
+      ]);
+    } finally {
+      setHitlLoading(false);
     }
   };
 
@@ -937,69 +1049,304 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
             overflow: "hidden",
           }}
         >
-      {/* MESSAGES */}
-      <Box
-        sx={{
-          flex: 1,
-          overflowY: "auto",
-          display: "flex",
-          flexDirection: "column",
-          pb: 4,
-          scrollBehavior: "smooth",
-          "&::-webkit-scrollbar": {
-            width: "8px",
-          },
-          "&::-webkit-scrollbar-thumb": {
-            backgroundColor: "divider",
-            borderRadius: "10px",
-          },
-        }}
-      >
-        {messages.length === 0 ? (
+          {/* MESSAGES */}
           <Box
             sx={{
               flex: 1,
+              overflowY: "auto",
               display: "flex",
               flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 2,
-              opacity: 0.5,
-              mt: "20vh",
+              pb: 4,
+              scrollBehavior: "smooth",
+              "&::-webkit-scrollbar": {
+                width: "8px",
+              },
+              "&::-webkit-scrollbar-thumb": {
+                backgroundColor: "divider",
+                borderRadius: "10px",
+              },
             }}
           >
-            <Avatar
-              sx={{
-                width: 64,
-                height: 64,
-                bgcolor: "action.hover",
-                color: "text.disabled",
-              }}
-            >
-              <RobotIcon sx={{ fontSize: 40 }} />
-            </Avatar>
-            <Typography variant="h5" fontWeight={600}>
-              How can I help you today?
-            </Typography>
-          </Box>
-        ) : (
-          messages.map((msg) => {
-            const isUser = msg.sender === "user";
-            const isSelected = selectedMessageId === msg.id;
-
-            return (
+            {messages.length === 0 ? (
               <Box
-                key={msg.id}
+                sx={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 2,
+                  opacity: 0.5,
+                  mt: "20vh",
+                }}
+              >
+                <Avatar
+                  sx={{
+                    width: 64,
+                    height: 64,
+                    bgcolor: "action.hover",
+                    color: "text.disabled",
+                  }}
+                >
+                  <RobotIcon sx={{ fontSize: 40 }} />
+                </Avatar>
+                <Typography variant="h5" fontWeight={600}>
+                  How can I help you today?
+                </Typography>
+              </Box>
+            ) : (
+              messages.map((msg) => {
+                const isUser = msg.sender === "user";
+                const isSelected = selectedMessageId === msg.id;
+
+                return (
+                  <Box
+                    key={msg.id}
+                    sx={{
+                      width: "100%",
+                      display: "flex",
+                      justifyContent: "center",
+                      py: 3,
+                      px: 2,
+                      bgcolor: isUser ? "transparent" : "action.hover",
+                      borderBottom: isUser ? "none" : 1,
+                      borderColor: "divider",
+                      transition: "background-color 0.15s",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: "100%",
+                        maxWidth: maxWidth,
+                        display: "flex",
+                        gap: 3,
+                      }}
+                    >
+                      {isUser ? (
+                        <Tooltip title="View message details">
+                          <Avatar
+                            onClick={() => handleSelectUserMessage(msg.id)}
+                            sx={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: "4px",
+                              bgcolor: "primary.main",
+                              fontSize: "0.9rem",
+                              cursor: "pointer",
+                              flexShrink: 0,
+                              outline: isSelected ? "2px solid" : "none",
+                              outlineColor: "primary.light",
+                              outlineOffset: 2,
+                              "&:hover": { opacity: 0.9, boxShadow: 2 },
+                            }}
+                          >
+                            <PersonIcon fontSize="small" />
+                          </Avatar>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip title="View message details">
+                          <Avatar
+                            onClick={() => handleSelectUserMessage(msg.id)}
+                            sx={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: "4px",
+                              bgcolor: "secondary.main",
+                              fontSize: "0.9rem",
+                              cursor: "pointer",
+                              flexShrink: 0,
+                              outline: isSelected ? "2px solid" : "none",
+                              outlineColor: "primary.main",
+                              outlineOffset: 2,
+                              "&:hover": { opacity: 0.9, boxShadow: 2 },
+                            }}
+                          >
+                            <RobotIcon fontSize="small" />
+                          </Avatar>
+                        </Tooltip>
+                      )}
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography
+                          variant="body2"
+                          fontWeight={700}
+                          sx={{
+                            mb: 0.5,
+                            color: "text.primary",
+                            textTransform: "capitalize",
+                          }}
+                        >
+                          {isUser ? "You" : "LearningHub"}
+                        </Typography>
+
+                        {isUser ? (
+                          <TruncatedTextMessage text={msg.text} />
+                        ) : (
+                          <Box
+                            sx={{
+                              "& p": {
+                                mt: 0,
+                                mb: 1.5,
+                                lineHeight: 1.6,
+                                color: "text.primary",
+                              },
+                              "& p:last-child": { mb: 0 },
+                              "& h1, & h2, & h3, & h4": {
+                                mt: 3,
+                                mb: 1.5,
+                                color: "text.primary",
+                                fontWeight: 700,
+                                lineHeight: 1.3,
+                              },
+                              "& h1:first-of-type, & h2:first-of-type, & h3:first-of-type":
+                              {
+                                mt: 0,
+                              },
+                              "& pre": {
+                                my: 2,
+                                borderRadius: "8px",
+                                overflow: "hidden",
+                              },
+                              "& code": { fontFamily: "'Fira Code', monospace" },
+                              "& ul, & ol": { mt: 0, mb: 1.5, pl: 3.5 },
+                              "& ul:last-child, & ol:last-child": { mb: 0 },
+                              "& li": { mb: 0.75 },
+                              "& li > p": { mb: 0.5 },
+                              "& hr": {
+                                my: 3,
+                                border: "none",
+                                borderBottom: 1,
+                                borderColor: "divider",
+                              },
+                              "& table": {
+                                width: "100%",
+                                borderCollapse: "collapse",
+                                my: 2.5,
+                                fontSize: "0.875rem",
+                                border: 1,
+                                borderColor: "divider",
+                                borderRadius: "8px",
+                                overflow: "hidden",
+                              },
+                              "& th": {
+                                bgcolor: "action.hover",
+                                px: 1.5,
+                                py: 1.25,
+                                textAlign: "left",
+                                fontWeight: 700,
+                                borderBottom: 1,
+                                borderRight: 1,
+                                borderColor: "divider",
+                              },
+                              "& td": {
+                                px: 1.5,
+                                py: 1,
+                                borderBottom: 1,
+                                borderRight: 1,
+                                borderColor: "divider",
+                                verticalAlign: "top",
+                              },
+                              "& tr:last-child td": {
+                                borderBottom: "none",
+                              },
+                              "& th:last-child, & td:last-child": {
+                                borderRight: "none",
+                              },
+                              "& tr:nth-of-type(even)": {
+                                bgcolor: "action.selected",
+                              },
+                              // BLINKING CURSOR
+                              ...(msg.isStreaming && {
+                                "& p:last-child::after, & li:last-child::after": {
+                                  content: '"\u25CF"',
+                                  ml: 1,
+                                  fontSize: '0.8em',
+                                  color: 'primary.main',
+                                  animation: 'cursor-blink 1s infinite',
+                                  verticalAlign: 'middle',
+                                },
+                              }),
+                              "@keyframes cursor-blink": {
+                                "0%": { opacity: 0 },
+                                "50%": { opacity: 1 },
+                                "100%": { opacity: 0 },
+                              }
+                            }}
+                          >
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                code: CodeBlock,
+                              }}
+                            >
+                              {msg.text}
+                            </ReactMarkdown>
+                          </Box>
+                        )}
+
+                        <Box sx={{ mt: 1.5, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: "text.secondary",
+                              fontSize: "0.7rem",
+                            }}
+                          >
+                            {msg.timestamp}
+                          </Typography>
+
+                          {!isUser && msg.text && !msg.isStreaming && (
+                            <Tooltip title={speakingMessageId === msg.id ? "Stop Listening" : "Read Aloud (TTS)"}>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  speakText(msg.text, msg.id);
+                                }}
+                                sx={{
+                                  color: speakingMessageId === msg.id ? "primary.main" : "text.secondary",
+                                  bgcolor: speakingMessageId === msg.id ? "primary.lighter" : "transparent",
+                                  p: 0.5,
+                                  "&:hover": {
+                                    color: "primary.main",
+                                    bgcolor: "action.hover"
+                                  }
+                                }}
+                              >
+                                {speakingMessageId === msg.id ? (
+                                  <StopIcon sx={{ fontSize: 16 }} />
+                                ) : (
+                                  <VolumeUpIcon sx={{ fontSize: 16 }} />
+                                )}
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                        </Box>
+                      </Box>
+                    </Box>
+                  </Box>
+                );
+              })
+            )}
+
+            {isTyping && (
+              <Box
                 sx={{
                   width: "100%",
                   display: "flex",
                   justifyContent: "center",
-                  py: 3,
+                  py: 4,
                   px: 2,
-                  bgcolor: isUser ? "transparent" : "action.hover",
-                  borderBottom: isUser ? "none" : 1,
+                  bgcolor: (theme) =>
+                    theme.palette.mode === 'dark'
+                      ? "rgba(255, 255, 255, 0.02)"
+                      : "rgba(0, 0, 0, 0.01)",
+                  borderBottom: 1,
                   borderColor: "divider",
-                  transition: "background-color 0.15s",
+                  animation: "fadeIn 0.3s ease-in-out",
+                  "@keyframes fadeIn": {
+                    from: { opacity: 0, transform: "translateY(10px)" },
+                    to: { opacity: 1, transform: "translateY(0)" }
+                  }
                 }}
               >
                 <Box
@@ -1008,442 +1355,228 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
                     maxWidth: maxWidth,
                     display: "flex",
                     gap: 3,
+                    alignItems: "flex-start",
                   }}
                 >
-                  {isUser ? (
-                    <Tooltip title="View message details">
-                      <Avatar
-                        onClick={() => handleSelectUserMessage(msg.id)}
-                        sx={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: "4px",
-                          bgcolor: "primary.main",
-                          fontSize: "0.9rem",
-                          cursor: "pointer",
-                          flexShrink: 0,
-                          outline: isSelected ? "2px solid" : "none",
-                          outlineColor: "primary.light",
-                          outlineOffset: 2,
-                          "&:hover": { opacity: 0.9, boxShadow: 2 },
-                        }}
-                      >
-                        <PersonIcon fontSize="small" />
-                      </Avatar>
-                    </Tooltip>
-                  ) : (
-                    <Tooltip title="View message details">
-                      <Avatar
-                        onClick={() => handleSelectUserMessage(msg.id)}
-                        sx={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: "4px",
-                          bgcolor: "secondary.main",
-                          fontSize: "0.9rem",
-                          cursor: "pointer",
-                          flexShrink: 0,
-                          outline: isSelected ? "2px solid" : "none",
-                          outlineColor: "primary.main",
-                          outlineOffset: 2,
-                          "&:hover": { opacity: 0.9, boxShadow: 2 },
-                        }}
-                      >
-                        <RobotIcon fontSize="small" />
-                      </Avatar>
-                    </Tooltip>
-                  )}
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Avatar
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "4px",
+                      bgcolor: "secondary.main",
+                      boxShadow: (theme) => `0 0 15px ${theme.palette.secondary.main}44`,
+                      animation: "pulseAvatar 2s infinite ease-in-out",
+                      "@keyframes pulseAvatar": {
+                        "0%": { transform: "scale(1)" },
+                        "50%": { transform: "scale(1.05)", boxShadow: (theme) => `0 0 25px ${theme.palette.secondary.main}66` },
+                        "100%": { transform: "scale(1)" }
+                      }
+                    }}
+                  >
+                    <RobotIcon fontSize="small" />
+                  </Avatar>
+
+                  <Box sx={{ flex: 1 }}>
                     <Typography
                       variant="body2"
                       fontWeight={700}
                       sx={{
-                        mb: 0.5,
+                        mb: 1,
                         color: "text.primary",
                         textTransform: "capitalize",
+                        letterSpacing: "0.5px"
                       }}
                     >
-                      {isUser ? "You" : "LearningHub"}
+                      LearningHub
                     </Typography>
 
-                    {isUser ? (
-                      <TruncatedTextMessage text={msg.text} />
-                    ) : (
-                      <Box
-                        sx={{
-                          "& p": {
-                            mt: 0,
-                            mb: 1.5,
-                            lineHeight: 1.6,
-                            color: "text.primary",
-                          },
-                          "& p:last-child": { mb: 0 },
-                          "& h1, & h2, & h3, & h4": {
-                            mt: 3,
-                            mb: 1.5,
-                            color: "text.primary",
-                            fontWeight: 700,
-                            lineHeight: 1.3,
-                          },
-                          "& h1:first-of-type, & h2:first-of-type, & h3:first-of-type":
-                          {
-                            mt: 0,
-                          },
-                          "& pre": {
-                            my: 2,
-                            borderRadius: "8px",
-                            overflow: "hidden",
-                          },
-                          "& code": { fontFamily: "'Fira Code', monospace" },
-                          "& ul, & ol": { mt: 0, mb: 1.5, pl: 3.5 },
-                          "& ul:last-child, & ol:last-child": { mb: 0 },
-                          "& li": { mb: 0.75 },
-                          "& li > p": { mb: 0.5 },
-                          "& hr": {
-                            my: 3,
-                            border: "none",
-                            borderBottom: 1,
-                            borderColor: "divider",
-                          },
-                          "& table": {
-                            width: "100%",
-                            borderCollapse: "collapse",
-                            my: 2.5,
-                            fontSize: "0.875rem",
-                            border: 1,
-                            borderColor: "divider",
-                            borderRadius: "8px",
-                            overflow: "hidden",
-                          },
-                          "& th": {
-                            bgcolor: "action.hover",
-                            px: 1.5,
-                            py: 1.25,
-                            textAlign: "left",
-                            fontWeight: 700,
-                            borderBottom: 1,
-                            borderRight: 1,
-                            borderColor: "divider",
-                          },
-                          "& td": {
-                            px: 1.5,
-                            py: 1,
-                            borderBottom: 1,
-                            borderRight: 1,
-                            borderColor: "divider",
-                            verticalAlign: "top",
-                          },
-                          "& tr:last-child td": {
-                            borderBottom: "none",
-                          },
-                          "& th:last-child, & td:last-child": {
-                            borderRight: "none",
-                          },
-                          "& tr:nth-of-type(even)": {
-                            bgcolor: "action.selected",
-                          },
-                          // BLINKING CURSOR
-                          ...(msg.isStreaming && {
-                            "& p:last-child::after, & li:last-child::after": {
-                              content: '"\u25CF"',
-                              ml: 1,
-                              fontSize: '0.8em',
-                              color: 'primary.main',
-                              animation: 'cursor-blink 1s infinite',
-                              verticalAlign: 'middle',
-                            },
-                          }),
-                          "@keyframes cursor-blink": {
-                            "0%": { opacity: 0 },
-                            "50%": { opacity: 1 },
-                            "100%": { opacity: 0 },
-                          }
-                        }}
-                      >
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            code: CodeBlock,
-                          }}
-                        >
-                          {msg.text}
-                        </ReactMarkdown>
-                      </Box>
-                    )}
-
-                    <Box sx={{ mt: 1.5, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <Box sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.5,
+                      p: 1.5,
+                      px: 2,
+                      width: "fit-content",
+                      borderRadius: "12px",
+                      bgcolor: "background.paper",
+                      border: 1,
+                      borderColor: "divider",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
+                    }}>
+                      <CircularProgress
+                        size={14}
+                        thickness={6}
+                        sx={{ color: "secondary.main" }}
+                      />
                       <Typography
-                        variant="caption"
+                        variant="body2"
                         sx={{
                           color: "text.secondary",
-                          fontSize: "0.7rem",
+                          fontStyle: "italic",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 0.5
                         }}
                       >
-                        {msg.timestamp}
+                        AI is processing your request
+                        <Box component="span" sx={{
+                          display: "flex",
+                          gap: 0.3,
+                          ml: 0.5,
+                          "& span": {
+                            width: 3,
+                            height: 3,
+                            borderRadius: "50%",
+                            bgcolor: "currentColor",
+                            animation: "dotJump 1.4s infinite ease-in-out both",
+                          },
+                          "& span:nth-of-type(1)": { animationDelay: "-0.32s" },
+                          "& span:nth-of-type(2)": { animationDelay: "-0.16s" },
+                          "@keyframes dotJump": {
+                            "0%, 80%, 100%": { transform: "scale(0)" },
+                            "40%": { transform: "scale(1)" }
+                          }
+                        }}>
+                          <span />
+                          <span />
+                          <span />
+                        </Box>
                       </Typography>
-
-                      {!isUser && msg.text && !msg.isStreaming && (
-                        <Tooltip title={speakingMessageId === msg.id ? "Stop Listening" : "Read Aloud (TTS)"}>
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              speakText(msg.text, msg.id);
-                            }}
-                            sx={{
-                              color: speakingMessageId === msg.id ? "primary.main" : "text.secondary",
-                              bgcolor: speakingMessageId === msg.id ? "primary.lighter" : "transparent",
-                              p: 0.5,
-                              "&:hover": {
-                                color: "primary.main",
-                                bgcolor: "action.hover"
-                              }
-                            }}
-                          >
-                            {speakingMessageId === msg.id ? (
-                              <StopIcon sx={{ fontSize: 16 }} />
-                            ) : (
-                              <VolumeUpIcon sx={{ fontSize: 16 }} />
-                            )}
-                          </IconButton>
-                        </Tooltip>
-                      )}
                     </Box>
                   </Box>
                 </Box>
               </Box>
-            );
-          })
-        )}
+            )}
 
-        {isTyping && (
+
+            {pendingInterrupt && (
+              <Box
+                sx={{
+                  width: "100%",
+                  display: "flex",
+                  justifyContent: "center",
+                  px: 2,
+                  py: 2,
+                }}
+              >
+                <Box sx={{ width: "100%", maxWidth: 720 }}>
+                  <HitlApprovalCard
+                    interrupt={pendingInterrupt}
+                    loading={hitlLoading}
+                    onSubmit={handleHitlDecision}
+                    onCancel={handleHitlDecision}
+                  />
+                </Box>
+              </Box>
+            )}
+
+            <div ref={messagesEndRef} />
+          </Box>
+
+          {/* INPUT AREA */}
           <Box
             sx={{
-              width: "100%",
+              p: 2,
+              pb: 4,
               display: "flex",
               justifyContent: "center",
-              py: 4,
-              px: 2,
-              bgcolor: (theme) =>
-                theme.palette.mode === 'dark'
-                  ? "rgba(255, 255, 255, 0.02)"
-                  : "rgba(0, 0, 0, 0.01)",
-              borderBottom: 1,
-              borderColor: "divider",
-              animation: "fadeIn 0.3s ease-in-out",
-              "@keyframes fadeIn": {
-                from: { opacity: 0, transform: "translateY(10px)" },
-                to: { opacity: 1, transform: "translateY(0)" }
-              }
+              bgcolor: "background.paper",
             }}
           >
             <Box
               sx={{
                 width: "100%",
                 maxWidth: maxWidth,
+                position: "relative",
                 display: "flex",
-                gap: 3,
-                alignItems: "flex-start",
+                flexDirection: "column",
+                gap: 1,
               }}
             >
-              <Avatar
+              <Paper
+                elevation={0}
                 sx={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: "4px",
-                  bgcolor: "secondary.main",
-                  boxShadow: (theme) => `0 0 15px ${theme.palette.secondary.main}44`,
-                  animation: "pulseAvatar 2s infinite ease-in-out",
-                  "@keyframes pulseAvatar": {
-                    "0%": { transform: "scale(1)" },
-                    "50%": { transform: "scale(1.05)", boxShadow: (theme) => `0 0 25px ${theme.palette.secondary.main}66` },
-                    "100%": { transform: "scale(1)" }
-                  }
-                }}
-              >
-                <RobotIcon fontSize="small" />
-              </Avatar>
-
-              <Box sx={{ flex: 1 }}>
-                <Typography
-                  variant="body2"
-                  fontWeight={700}
-                  sx={{
-                    mb: 1,
-                    color: "text.primary",
-                    textTransform: "capitalize",
-                    letterSpacing: "0.5px"
-                  }}
-                >
-                  LearningHub
-                </Typography>
-
-                <Box sx={{
                   display: "flex",
-                  alignItems: "center",
-                  gap: 1.5,
-                  p: 1.5,
-                  px: 2,
-                  width: "fit-content",
-                  borderRadius: "12px",
-                  bgcolor: "background.paper",
+                  alignItems: "flex-end",
+                  p: "8px 12px",
                   border: 1,
                   borderColor: "divider",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
-                }}>
-                  <CircularProgress
-                    size={14}
-                    thickness={6}
-                    sx={{ color: "secondary.main" }}
-                  />
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: "text.secondary",
-                      fontStyle: "italic",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 0.5
-                    }}
-                  >
-                    AI is processing your request
-                    <Box component="span" sx={{
-                      display: "flex",
-                      gap: 0.3,
-                      ml: 0.5,
-                      "& span": {
-                        width: 3,
-                        height: 3,
-                        borderRadius: "50%",
-                        bgcolor: "currentColor",
-                        animation: "dotJump 1.4s infinite ease-in-out both",
-                      },
-                      "& span:nth-of-type(1)": { animationDelay: "-0.32s" },
-                      "& span:nth-of-type(2)": { animationDelay: "-0.16s" },
-                      "@keyframes dotJump": {
-                        "0%, 80%, 100%": { transform: "scale(0)" },
-                        "40%": { transform: "scale(1)" }
-                      }
-                    }}>
-                      <span />
-                      <span />
-                      <span />
-                    </Box>
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
-          </Box>
-        )}
-
-
-        <div ref={messagesEndRef} />
-      </Box>
-
-      {/* INPUT AREA */}
-      <Box
-        sx={{
-          p: 2,
-          pb: 4,
-          display: "flex",
-          justifyContent: "center",
-          bgcolor: "background.paper",
-        }}
-      >
-        <Box
-          sx={{
-            width: "100%",
-            maxWidth: maxWidth,
-            position: "relative",
-            display: "flex",
-            flexDirection: "column",
-            gap: 1,
-          }}
-        >
-          <Paper
-            elevation={0}
-            sx={{
-              display: "flex",
-              alignItems: "flex-end",
-              p: "8px 12px",
-              border: 1,
-              borderColor: "divider",
-              borderRadius: "12px",
-              transition: "border-color 0.2s",
-              "&:focus-within": {
-                borderColor: "primary.main",
-                boxShadow: (theme) => `0 0 0 1px ${theme.palette.primary.main} inset`,
-              },
-            }}
-          >
-            <TextField
-              fullWidth
-              multiline
-              maxRows={8}
-              placeholder="Message LearningHub..."
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={handleKeyPress}
-              variant="standard"
-              InputProps={{
-                disableUnderline: true,
-                sx: {
-                  fontSize: "1rem",
-                  px: 1,
-                  py: 0.5,
-                  lineHeight: 1.5,
-                },
-              }}
-            />
-
-            <Tooltip title={isListening ? "Stop voice recording" : "Speech to Text (Mic)"}>
-              <IconButton
-                onClick={toggleListening}
-                sx={{
-                  bgcolor: isListening ? "error.main" : "action.hover",
-                  color: isListening ? "white" : "text.secondary",
-                  borderRadius: "8px",
-                  p: 0.75,
-                  mb: 0.25,
-                  mr: 1,
-                  animation: isListening ? "micPulse 1.5s infinite ease-in-out" : "none",
-                  "@keyframes micPulse": {
-                    "0%": { transform: "scale(1)", boxShadow: "0 0 0 0 rgba(239, 68, 68, 0.7)" },
-                    "70%": { transform: "scale(1.1)", boxShadow: "0 0 0 8px rgba(239, 68, 68, 0)" },
-                    "100%": { transform: "scale(1)", boxShadow: "0 0 0 0 rgba(239, 68, 68, 0)" }
+                  borderRadius: "12px",
+                  transition: "border-color 0.2s",
+                  "&:focus-within": {
+                    borderColor: "primary.main",
+                    boxShadow: (theme) => `0 0 0 1px ${theme.palette.primary.main} inset`,
                   },
-                  "&:hover": {
-                    bgcolor: isListening ? "error.dark" : "action.selected",
-                    color: isListening ? "white" : "primary.main",
-                  }
                 }}
               >
-                {isListening ? <MicOffIcon sx={{ fontSize: 20 }} /> : <MicIcon sx={{ fontSize: 20 }} />}
-              </IconButton>
-            </Tooltip>
+                <TextField
+                  fullWidth
+                  multiline
+                  maxRows={8}
+                  placeholder="Message LearningHub..."
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  variant="standard"
+                  InputProps={{
+                    disableUnderline: true,
+                    sx: {
+                      fontSize: "1rem",
+                      px: 1,
+                      py: 0.5,
+                      lineHeight: 1.5,
+                    },
+                  }}
+                />
 
-            <IconButton
-              onClick={handleSend}
-              disabled={!inputValue.trim() || isTyping}
-              sx={{
-                bgcolor: inputValue.trim() ? "primary.main" : "transparent",
-                color: inputValue.trim() ? "primary.contrastText" : "text.disabled",
-                borderRadius: "8px",
-                p: 0.75,
-                mb: 0.25,
-                "&:hover": {
-                  bgcolor: inputValue.trim() ? "primary.dark" : "transparent",
-                },
-                "&.Mui-disabled": {
-                  color: "text.disabled",
-                },
-              }}
-            >
-              <SendIcon sx={{ fontSize: 20 }} />
-            </IconButton>
-          </Paper>
-        </Box>
-      </Box>
+                <Tooltip title={isListening ? "Stop voice recording" : "Speech to Text (Mic)"}>
+                  <IconButton
+                    onClick={toggleListening}
+                    sx={{
+                      bgcolor: isListening ? "error.main" : "action.hover",
+                      color: isListening ? "white" : "text.secondary",
+                      borderRadius: "8px",
+                      p: 0.75,
+                      mb: 0.25,
+                      mr: 1,
+                      animation: isListening ? "micPulse 1.5s infinite ease-in-out" : "none",
+                      "@keyframes micPulse": {
+                        "0%": { transform: "scale(1)", boxShadow: "0 0 0 0 rgba(239, 68, 68, 0.7)" },
+                        "70%": { transform: "scale(1.1)", boxShadow: "0 0 0 8px rgba(239, 68, 68, 0)" },
+                        "100%": { transform: "scale(1)", boxShadow: "0 0 0 0 rgba(239, 68, 68, 0)" }
+                      },
+                      "&:hover": {
+                        bgcolor: isListening ? "error.dark" : "action.selected",
+                        color: isListening ? "white" : "primary.main",
+                      }
+                    }}
+                  >
+                    {isListening ? <MicOffIcon sx={{ fontSize: 20 }} /> : <MicIcon sx={{ fontSize: 20 }} />}
+                  </IconButton>
+                </Tooltip>
+
+                <IconButton
+                  onClick={handleSend}
+                  disabled={!inputValue.trim() || isTyping || Boolean(pendingInterrupt) || hitlLoading}
+                  sx={{
+                    bgcolor: inputValue.trim() ? "primary.main" : "transparent",
+                    color: inputValue.trim() ? "primary.contrastText" : "text.disabled",
+                    borderRadius: "8px",
+                    p: 0.75,
+                    mb: 0.25,
+                    "&:hover": {
+                      bgcolor: inputValue.trim() ? "primary.dark" : "transparent",
+                    },
+                    "&.Mui-disabled": {
+                      color: "text.disabled",
+                    },
+                  }}
+                >
+                  <SendIcon sx={{ fontSize: 20 }} />
+                </IconButton>
+              </Paper>
+            </Box>
+          </Box>
         </Box>
 
         {showBooksPanel ? (
@@ -1795,7 +1928,7 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
                   </Box>
                 </Grid>
               </Grid>
-              
+
               {usageData.history?.length > 0 && (
                 <Suspense
                   fallback={

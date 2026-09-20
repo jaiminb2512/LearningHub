@@ -1,6 +1,7 @@
 import { AI_PROVIDERS, DEFAULT_AI_SETTINGS } from "../utils/aiConfig.js";
 import sendResponse from "../utils/response.js";
-import { generateMessage, streamMessage, generateEmbedding } from "../utils/agent.js";
+import { generateMessage, streamMessage, resumeMessage, generateEmbedding } from "../utils/agent.js";
+import { normalizeHitlDecision } from "../utils/hitl.js";
 import prisma from "../dbConnect/prismaClient.js";
 import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 import { encode } from "gpt-tokenizer";
@@ -219,6 +220,7 @@ export const stream = async (req, res) => {
     res.write(`data: ${JSON.stringify({ type: "prompt", prompt: promptText })}\n\n`);
 
     let fullContent = "";
+    let interrupted = false;
 
     try {
       const responseStream = await streamMessage(promptText, formattedMessages, model, {
@@ -227,7 +229,17 @@ export const stream = async (req, res) => {
       }, req.user.userId, threadId);
 
       for await (const chunk of responseStream) {
-        const content = chunk?.content || "";
+        if (chunk?.type === "interrupt") {
+          interrupted = true;
+          res.write(`data: ${JSON.stringify({ type: "interrupt", interrupt: chunk.interrupt })}\n\n`);
+          continue;
+        }
+
+        const content =
+          chunk?.type === "content"
+            ? chunk.content || ""
+            : chunk?.content || "";
+        if (!content) continue;
         fullContent += content;
         res.write(`data: ${JSON.stringify({ type: "content", content })}\n\n`);
       }
@@ -235,36 +247,42 @@ export const stream = async (req, res) => {
       console.error("Stream generation error:", streamErr);
       res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);
     } finally {
-      const tokenPromptText =
-        promptText + " " + formattedMessages.map((m) => m.content).join(" ");
-      const inputTokens = encode(tokenPromptText).length;
-      const outputTokens = encode(fullContent).length;
+      if (!interrupted && fullContent) {
+        const tokenPromptText =
+          promptText + " " + formattedMessages.map((m) => m.content).join(" ");
+        const inputTokens = encode(tokenPromptText).length;
+        const outputTokens = encode(fullContent).length;
 
-      await prisma.message.create({
-        data: {
-          threadId,
-          role: "assistant",
-          content: fullContent,
-          model,
-          provider,
-          inputTokens,
-          outputTokens,
-          totalTokens: inputTokens + outputTokens,
-          sequence: nextSequence + 1,
-          questionId: userMessage.messageId,
-          promptText,
-          aiSettingId: threadData.aiSettingId || null,
-        },
-      });
-
-      if (aiSettings.ragEnabled && fullContent && false) {
-        const embedding = await generateEmbedding(fullContent);
-        await saveDocumentEmbedding({
-          userId: req.user.userId,
-          threadId,
-          messageId: userMessage.messageId,
-          embedding,
+        await prisma.message.create({
+          data: {
+            threadId,
+            role: "assistant",
+            content: fullContent,
+            model,
+            provider,
+            inputTokens,
+            outputTokens,
+            totalTokens: inputTokens + outputTokens,
+            sequence: nextSequence + 1,
+            questionId: userMessage.messageId,
+            promptText,
+            aiSettingId: threadData.aiSettingId || null,
+          },
         });
+
+        if (aiSettings.ragEnabled && fullContent) {
+          try {
+            const embedding = await generateEmbedding(fullContent);
+            await saveDocumentEmbedding({
+              userId: req.user.userId,
+              threadId,
+              messageId: userMessage.messageId,
+              embedding,
+            });
+          } catch (embedErr) {
+            console.error("Chat memory embedding error:", embedErr);
+          }
+        }
       }
     }
 
@@ -274,6 +292,107 @@ export const stream = async (req, res) => {
     console.error("Stream error:", error);
     if (!res.headersSent) {
       return sendResponse(res, 500, "Failed to stream AI response", { error: error.message });
+    }
+    res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+    res.end();
+  }
+};
+
+export const resume = async (req, res) => {
+  try {
+    const { threadId, decision } = req.body;
+
+    if (!threadId) return sendResponse(res, 400, "Thread is required");
+    if (!req.user?.userId) return sendResponse(res, 401, "Authentication required");
+    if (decision == null || typeof decision !== "object") {
+      return sendResponse(res, 400, "Decision is required");
+    }
+
+    const threadData = await loadThreadWithSettings(threadId, req.user.userId);
+    if (!threadData) return sendResponse(res, 400, "Thread not found");
+
+    const aiSettings = await resolveThreadAiSettings(threadData);
+    const model = aiSettings.model || DEFAULT_AI_SETTINGS.model;
+    const provider = aiSettings.provider || DEFAULT_AI_SETTINGS.provider;
+    const systemPrompt = threadData.systemPrompt?.prompt || "";
+
+    const existingMessages = await prisma.message.findMany({
+      where: { threadId },
+      orderBy: { sequence: "asc" },
+    });
+    const nextSequence = existingMessages.length + 1;
+    const lastUserMessage = [...existingMessages].reverse().find((m) => m.role === "user");
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    let fullContent = "";
+    let interrupted = false;
+    const hitlDecision = normalizeHitlDecision(decision);
+
+    try {
+      const responseStream = resumeMessage({
+        threadId,
+        userId: req.user.userId,
+        model,
+        options: {
+          temperature: aiSettings.temperature,
+          maxOutputTokens: aiSettings.maxOutputTokens,
+        },
+        systemPrompt,
+        decision: hitlDecision,
+      });
+
+      for await (const chunk of responseStream) {
+        if (chunk?.type === "interrupt") {
+          interrupted = true;
+          res.write(`data: ${JSON.stringify({ type: "interrupt", interrupt: chunk.interrupt })}\n\n`);
+          continue;
+        }
+
+        const content =
+          chunk?.type === "content"
+            ? chunk.content || ""
+            : chunk?.content || "";
+        if (!content) continue;
+        fullContent += content;
+        res.write(`data: ${JSON.stringify({ type: "content", content })}\n\n`);
+      }
+    } catch (streamErr) {
+      console.error("Resume stream error:", streamErr);
+      res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);
+    } finally {
+      if (!interrupted && fullContent) {
+        const inputTokens = encode(fullContent).length;
+        const outputTokens = encode(fullContent).length;
+
+        await prisma.message.create({
+          data: {
+            threadId,
+            role: "assistant",
+            content: fullContent,
+            model,
+            provider,
+            inputTokens,
+            outputTokens,
+            totalTokens: inputTokens + outputTokens,
+            sequence: nextSequence,
+            questionId: lastUserMessage?.messageId || null,
+            promptText: JSON.stringify({ resumed: true, decision: hitlDecision }, null, 2),
+            aiSettingId: threadData.aiSettingId || null,
+          },
+        });
+      }
+    }
+
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (error) {
+    console.error("Resume error:", error);
+    if (!res.headersSent) {
+      return sendResponse(res, 500, "Failed to resume AI response", { error: error.message });
     }
     res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
     res.end();
