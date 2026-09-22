@@ -1,13 +1,15 @@
-import express from 'express';
 import dotenv from 'dotenv';
+dotenv.config();
+import { initLangfuse } from './observability/langfuse.js';
+initLangfuse();
+
+import express from 'express';
 import cors from 'cors';
 import sendResponse from './utils/response.js';
 import { connectDB } from './dbConnect/database.js';
 import apiRoutes from './routes/index.js';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './docs/swagger.js';
-
-dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
