@@ -39,19 +39,25 @@ dotenv.config();
 /** Shared in-process checkpointer so HITL resume works across requests. */
 const checkpointer = new MemorySaver();
 
-const buildTools = (userId, threadId) => [
-  createBookTool(userId, threadId),
-  listBooksTool(userId),
-  updateBookTool(userId),
-  getBookTool(userId),
-  deleteBookTool(userId),
-  createNoteTool(userId),
-  listNotesTool(userId),
-  getNoteTool(userId),
-  updateNoteTool(userId),
-  deleteNoteTool(userId),
-  reorderNotesTool(userId),
-];
+const buildTools = (userId, threadId, knowledgeRagEnabled) => {
+  if (knowledgeRagEnabled) {
+    return [
+      createBookTool(userId, threadId),
+      listBooksTool(userId),
+      updateBookTool(userId),
+      getBookTool(userId),
+      deleteBookTool(userId),
+      createNoteTool(userId),
+      listNotesTool(userId),
+      getNoteTool(userId),
+      updateNoteTool(userId),
+      deleteNoteTool(userId),
+      reorderNotesTool(userId),
+    ]
+  } else {
+    return []
+  }
+};
 
 const isSystemMessage = (m) =>
   m?._getType?.() === "system" ||
@@ -90,8 +96,8 @@ const normalizeMessagesForGemini = (messages = [], fallbackSystemPrompt = "") =>
   return [{ role: "system", content: systemContent }, ...nonSystem];
 };
 
-const buildGraph = ({ model, options, userId, threadId, systemPrompt }) => {
-  const tools = buildTools(userId, threadId);
+const buildGraph = ({ model, options, userId, threadId, systemPrompt, knowledgeRagEnabled }) => {
+  const tools = buildTools(userId, threadId, knowledgeRagEnabled);
   const modelName = model || DEFAULT_AI_SETTINGS.model;
 
   const chat = new ChatGoogleGenerativeAI({
@@ -189,7 +195,6 @@ export const streamMessage = async function* (
       model,
       flow: "stream",
       ragEnabled: options.ragEnabled,
-      knowledgeRagEnabled: options.knowledgeRagEnabled,
     },
   });
 
@@ -200,6 +205,7 @@ export const streamMessage = async function* (
       userId,
       threadId,
       systemPrompt,
+      knowledgeRagEnabled: options.knowledgeRagEnabled
     });
 
     const langfuseHandler = getLangfuseCallbackHandler({

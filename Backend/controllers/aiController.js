@@ -226,6 +226,7 @@ export const stream = async (req, res) => {
       const responseStream = await streamMessage(promptText, formattedMessages, model, {
         temperature: aiSettings.temperature,
         maxOutputTokens: aiSettings.maxOutputTokens,
+        knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
       }, req.user.userId, threadId);
 
       for await (const chunk of responseStream) {
