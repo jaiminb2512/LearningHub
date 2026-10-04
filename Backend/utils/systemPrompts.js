@@ -74,42 +74,13 @@ export const prompt = async (
   const useKnowledge = knowledgeRagEnabled !== false;
   const useChatMemory = ragEnabled !== false;
 
-  if (!useKnowledge && !useChatMemory) {
-    return promptText;
-  }
-
-  const userMessageQueryEmbedding = await generateEmbedding(userMessage);
-
-  const [knowledgeChunks, chatDocuments] = await Promise.all([
-    useKnowledge
-      ? semanticSearchKnowledgeChunks(userId, threadId, userMessageQueryEmbedding, 5)
-      : Promise.resolve([]),
-    useChatMemory
-      ? semanticSearch(userId, userMessageQueryEmbedding, 3)
-      : Promise.resolve([]),
-  ]);
-
-  let ragSection = "";
-
   if (useKnowledge) {
-    const knowledgeContext = formatKnowledgeContext(knowledgeChunks);
-    ragSection +=
-      "\n\nHere are related excerpts from attached knowledge files:\n" +
-      (knowledgeContext || "No related knowledge file excerpts found.");
+    return promptText + "\n\n you have access of rag to get user knowledge source if needed than call that tool and get knowledge source";
   }
 
   if (useChatMemory) {
-    const chatMemoryContext = formatChatMemoryContext(chatDocuments);
-    if (chatMemoryContext) {
-      ragSection +=
-        "\n\nHere are related chat-memory documents:\n" + chatMemoryContext;
-    }
+    return promptText + "\n\n you have access of rag to get user chat memory if needed than call that tool and get chat memory";
   }
 
-  return (
-    promptText +
-    ragSection +
-    "\n\nUser message:\n" +
-    userMessage
-  );
+  return promptText;
 };

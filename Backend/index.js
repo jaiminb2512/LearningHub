@@ -1,3 +1,5 @@
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import  createLearningHubMcpServer from "./mcp/remoteMCPServer.js"
 import dotenv from 'dotenv';
 dotenv.config();
 import { initLangfuse } from './observability/langfuse.js';
@@ -80,12 +82,26 @@ app.get('/db-test', async (req, res) => {
 const startServer = async () => {
     await initializeDB();
 
+    const mcpServer = createLearningHubMcpServer();
+
+    app.all("/mcp", async (req, res, next) => {
+        const transport = new NodeStreamableHTTPServerTransport({
+            sessionIdGenerator: undefined,
+        });
+
+        try {
+            await mcpServer.connect(transport);
+            await transport.handleRequest(req, res, req.body);
+        } catch (error) {
+            next(error);
+        }
+    });
+
     app.listen(port, () => {
         console.log(`Server listening at http://localhost:${port}`);
+        console.log(`MCP endpoint available at http://localhost:${port}/mcp`);
         console.log(`API documentation available at http://localhost:${port}/api-docs`);
     });
 };
 
 startServer();
-
-export default app;

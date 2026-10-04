@@ -227,6 +227,7 @@ export const stream = async (req, res) => {
         temperature: aiSettings.temperature,
         maxOutputTokens: aiSettings.maxOutputTokens,
         knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
+        ragEnabled: aiSettings.ragEnabled,
       }, req.user.userId, threadId);
 
       for await (const chunk of responseStream) {

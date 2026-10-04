@@ -13,6 +13,8 @@ import {
   updateNoteTool,
   deleteNoteTool,
   reorderNotesTool,
+  getKnowledgeContext,
+  getChatMemoryContext,
 } from "./aiTools.js";
 import { GoogleGenAI } from "@google/genai";
 import {
@@ -39,9 +41,13 @@ dotenv.config();
 /** Shared in-process checkpointer so HITL resume works across requests. */
 const checkpointer = new MemorySaver();
 
-const buildTools = (userId, threadId, knowledgeRagEnabled) => {
+const buildTools = (userId, threadId, knowledgeRagEnabled, ragEnabled) => {
+
+  let tools = []
+
   if (knowledgeRagEnabled) {
-    return [
+    tools.push( 
+      getKnowledgeContext(userId, threadId),
       createBookTool(userId, threadId),
       listBooksTool(userId),
       updateBookTool(userId),
@@ -53,10 +59,13 @@ const buildTools = (userId, threadId, knowledgeRagEnabled) => {
       updateNoteTool(userId),
       deleteNoteTool(userId),
       reorderNotesTool(userId),
-    ]
-  } else {
-    return []
+    )
   }
+  if (ragEnabled) {
+    tools.push(getChatMemoryContext(userId, threadId));
+  }
+
+  return tools;
 };
 
 const isSystemMessage = (m) =>
@@ -96,8 +105,8 @@ const normalizeMessagesForGemini = (messages = [], fallbackSystemPrompt = "") =>
   return [{ role: "system", content: systemContent }, ...nonSystem];
 };
 
-const buildGraph = ({ model, options, userId, threadId, systemPrompt, knowledgeRagEnabled }) => {
-  const tools = buildTools(userId, threadId, knowledgeRagEnabled);
+const buildGraph = ({ model, options, userId, threadId, systemPrompt, knowledgeRagEnabled, ragEnabled }) => {
+  const tools = buildTools(userId, threadId, knowledgeRagEnabled, ragEnabled);
   const modelName = model || DEFAULT_AI_SETTINGS.model;
 
   const chat = new ChatGoogleGenerativeAI({
@@ -205,7 +214,8 @@ export const streamMessage = async function* (
       userId,
       threadId,
       systemPrompt,
-      knowledgeRagEnabled: options.knowledgeRagEnabled
+      knowledgeRagEnabled: options.knowledgeRagEnabled,
+      ragEnabled: options.ragEnabled,
     });
 
     const langfuseHandler = getLangfuseCallbackHandler({

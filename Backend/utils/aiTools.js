@@ -12,6 +12,8 @@ import {
   rejectedToolResult,
   gateHitlDecision,
 } from "./hitl.js";
+import { generateEmbedding } from "./agent.js";
+import { semanticSearchKnowledgeChunks, semanticSearch } from "../utils/RAGService.js";
 
 export const internetSearchTool = new DuckDuckGoSearch({
   maxResults: 5,
@@ -388,3 +390,29 @@ export const reorderNotesTool = (userId) => {
     },
   });
 };
+
+export const getKnowledgeContext = (userId, threadId) => {
+  return new DynamicStructuredTool({
+    name: "get_knowledge_context",
+    description: "Get the knowledge context for the user message based on user uploaded knowledge and notes. This tool is used internally by the AI agent to provide context for user messages.",
+    schema: z.object({ message: z.string() }),
+    func: async ({ message }) => {
+      const userMessageQueryEmbedding = await generateEmbedding(message);
+      const knowledgeChunks = await semanticSearchKnowledgeChunks(userId, threadId, userMessageQueryEmbedding, 5);
+      return knowledgeChunks;
+    },
+  });
+}
+
+export const getChatMemoryContext = (userId, threadId) => {
+  return new DynamicStructuredTool({
+    name: "get_chat_memory_context",
+    description: "Get the chat memory context for the user message based on past messagges. This tool is used internally by the AI agent to provide context for user messages.",
+    schema: z.object({ message: z.string() }),
+    func: async ({ message }) => {
+      const userMessageQueryEmbedding = await generateEmbedding(message);
+      const knowledgeChunks = await semanticSearch(userId, userMessageQueryEmbedding, 3);
+      return knowledgeChunks;
+    },
+  });
+}
