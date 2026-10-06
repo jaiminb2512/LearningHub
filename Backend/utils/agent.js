@@ -1,4 +1,7 @@
-import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import {
+  ChatGoogleGenerativeAI,
+  GoogleGenerativeAIEmbeddings,
+} from "@langchain/google-genai";
 import dotenv from "dotenv";
 import { DEFAULT_AI_SETTINGS } from "./aiConfig.js";
 import {
@@ -35,18 +38,23 @@ import {
   messagePreview,
   getLangfuseCallbackHandler,
 } from "../services/observabilityService.js";
+import { MCPAdapter } from "@langchain/mcp-adapters";
 
 dotenv.config();
 
 /** Shared in-process checkpointer so HITL resume works across requests. */
 const checkpointer = new MemorySaver();
 
-const buildTools = (userId, threadId, knowledgeRagEnabled, ragEnabled) => {
-
-  let tools = []
+const buildTools = async (
+  userId,
+  threadId,
+  knowledgeRagEnabled,
+  ragEnabled,
+) => {
+  let tools = [];
 
   if (knowledgeRagEnabled) {
-    tools.push( 
+    tools.push(
       getKnowledgeContext(userId, threadId),
       createBookTool(userId, threadId),
       listBooksTool(userId),
@@ -59,10 +67,28 @@ const buildTools = (userId, threadId, knowledgeRagEnabled, ragEnabled) => {
       updateNoteTool(userId),
       deleteNoteTool(userId),
       reorderNotesTool(userId),
-    )
+    );
   }
   if (ragEnabled) {
     tools.push(getChatMemoryContext(userId, threadId));
+  }
+
+   const adapter = new MCPAdapter({
+    servers: {
+      learninghub: {
+        url: "http://localhost:3009/mcp",
+      },
+    },
+  });
+
+  const mcpTools = await adapter.listTools();
+
+  tools.push(...mcpTools);
+
+  for (const tool of tools) {
+    if (tool.name) {
+      console.log(`Registered tool: ${tool.name} - ${tool.description ?? ""}`);
+    }
   }
 
   return tools;
@@ -77,7 +103,10 @@ const isSystemMessage = (m) =>
  * Gemini requires exactly one system message and it must be first.
  * LangGraph state can accumulate / reorder system entries across tool loops.
  */
-const normalizeMessagesForGemini = (messages = [], fallbackSystemPrompt = "") => {
+const normalizeMessagesForGemini = (
+  messages = [],
+  fallbackSystemPrompt = "",
+) => {
   const systemContents = [];
   const nonSystem = [];
 
@@ -105,8 +134,16 @@ const normalizeMessagesForGemini = (messages = [], fallbackSystemPrompt = "") =>
   return [{ role: "system", content: systemContent }, ...nonSystem];
 };
 
-const buildGraph = ({ model, options, userId, threadId, systemPrompt, knowledgeRagEnabled, ragEnabled }) => {
-  const tools = buildTools(userId, threadId, knowledgeRagEnabled, ragEnabled);
+const buildGraph = async ({
+  model,
+  options,
+  userId,
+  threadId,
+  systemPrompt,
+  knowledgeRagEnabled,
+  ragEnabled,
+}) => {
+  const tools = await buildTools(userId, threadId, knowledgeRagEnabled, ragEnabled);
   const modelName = model || DEFAULT_AI_SETTINGS.model;
 
   const chat = new ChatGoogleGenerativeAI({
@@ -114,7 +151,8 @@ const buildGraph = ({ model, options, userId, threadId, systemPrompt, knowledgeR
     apiKey: process.env.GEMINI_API_KEY,
     streamUsage: true,
     temperature: options.temperature ?? DEFAULT_AI_SETTINGS.temperature,
-    maxOutputTokens: options.maxOutputTokens ?? DEFAULT_AI_SETTINGS.maxOutputTokens,
+    maxOutputTokens:
+      options.maxOutputTokens ?? DEFAULT_AI_SETTINGS.maxOutputTokens,
   }).bindTools(tools);
 
   // LLM calls are auto-instrumented via the Langfuse CallbackHandler passed
@@ -123,7 +161,7 @@ const buildGraph = ({ model, options, userId, threadId, systemPrompt, knowledgeR
   const callModel = async (state) => {
     const inputMessages = normalizeMessagesForGemini(
       state.messages,
-      systemPrompt
+      systemPrompt,
     );
     const response = await chat.invoke(inputMessages);
     return { messages: [response] };
@@ -159,7 +197,9 @@ const extractInterruptPayload = (result) => {
   const first = interrupts[0];
   return {
     id: first.id,
-    ...(first.value && typeof first.value === "object" ? first.value : { value: first.value }),
+    ...(first.value && typeof first.value === "object"
+      ? first.value
+      : { value: first.value }),
   };
 };
 
@@ -193,7 +233,7 @@ export const streamMessage = async function* (
   model,
   options = {},
   userId,
-  threadId
+  threadId,
 ) {
   const trace = startChatTrace({
     name: "learninghub-chat",
@@ -208,7 +248,7 @@ export const streamMessage = async function* (
   });
 
   try {
-    const graph = buildGraph({
+    const graph = await buildGraph({
       model,
       options,
       userId,
@@ -303,7 +343,7 @@ export const resumeMessage = async function* ({
   });
 
   try {
-    const graph = buildGraph({
+    const graph = await buildGraph({
       model,
       options,
       userId,
@@ -325,7 +365,7 @@ export const resumeMessage = async function* ({
 
     const result = await graph.invoke(
       new Command({ resume: normalizedDecision }),
-      config
+      config,
     );
 
     const interruptPayload = extractInterruptPayload(result);
@@ -372,13 +412,14 @@ export const generateMessage = async (
   messages,
   provider,
   model,
-  options = {}
+  options = {},
 ) => {
   const chat = new ChatGoogleGenerativeAI({
     model: model || DEFAULT_AI_SETTINGS.model,
     apiKey: process.env.GEMINI_API_KEY,
     temperature: options.temperature ?? DEFAULT_AI_SETTINGS.temperature,
-    maxOutputTokens: options.maxOutputTokens ?? DEFAULT_AI_SETTINGS.maxOutputTokens,
+    maxOutputTokens:
+      options.maxOutputTokens ?? DEFAULT_AI_SETTINGS.maxOutputTokens,
   });
 
   const response = await chat.invoke([
