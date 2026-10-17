@@ -25,7 +25,6 @@ import {
   MessagesAnnotation,
   START,
   END,
-  MemorySaver,
   Command,
 } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
@@ -42,8 +41,7 @@ import { MCPAdapter } from "@langchain/mcp-adapters";
 
 dotenv.config();
 
-/** Shared in-process checkpointer so HITL resume works across requests. */
-const checkpointer = new MemorySaver();
+import { getCheckpointer } from "./checkpointer.js";  
 
 const buildTools = async (
   userId,
@@ -73,7 +71,7 @@ const buildTools = async (
     tools.push(getChatMemoryContext(userId, threadId));
   }
 
-   const adapter = new MCPAdapter({
+  const adapter = new MCPAdapter({
     servers: {
       learninghub: {
         url: "http://localhost:3009/mcp",
@@ -84,12 +82,6 @@ const buildTools = async (
   const mcpTools = await adapter.listTools();
 
   tools.push(...mcpTools);
-
-  for (const tool of tools) {
-    if (tool.name) {
-      console.log(`Registered tool: ${tool.name} - ${tool.description ?? ""}`);
-    }
-  }
 
   return tools;
 };
@@ -143,7 +135,12 @@ const buildGraph = async ({
   knowledgeRagEnabled,
   ragEnabled,
 }) => {
-  const tools = await buildTools(userId, threadId, knowledgeRagEnabled, ragEnabled);
+  const tools = await buildTools(
+    userId,
+    threadId,
+    knowledgeRagEnabled,
+    ragEnabled,
+  );
   const modelName = model || DEFAULT_AI_SETTINGS.model;
 
   const chat = new ChatGoogleGenerativeAI({
@@ -186,7 +183,7 @@ const buildGraph = async ({
       [END]: END,
     })
     .addEdge("tools", "agent")
-    .compile({ checkpointer });
+    .compile({ checkpointer: getCheckpointer() });
 };
 
 const extractInterruptPayload = (result) => {
