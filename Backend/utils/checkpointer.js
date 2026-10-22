@@ -19,8 +19,6 @@ export async function initializeCheckpointer() {
 
   await checkpointer.setup();
 
-  console.log("LangGraph PostgreSQL checkpointer initialized");
-
   return checkpointer;
 }
 

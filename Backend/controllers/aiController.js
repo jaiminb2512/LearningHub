@@ -1,6 +1,11 @@
 import { AI_PROVIDERS, DEFAULT_AI_SETTINGS } from "../utils/aiConfig.js";
 import sendResponse from "../utils/response.js";
-import { generateMessage, streamMessage, resumeMessage, generateEmbedding } from "../utils/agent.js";
+import {
+  generateMessage,
+  streamMessage,
+  resumeMessage,
+  generateEmbedding,
+} from "../utils/agent.js";
 import { normalizeHitlDecision } from "../utils/hitl.js";
 import prisma from "../dbConnect/prismaClient.js";
 import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
@@ -9,7 +14,12 @@ import { prompt } from "../utils/systemPrompts.js";
 import { randomUUID } from "node:crypto";
 import { resolveThreadAiSettings } from "../services/aiSettingService.js";
 
-const saveDocumentEmbedding = async ({ userId, threadId, messageId, embedding }) => {
+const saveDocumentEmbedding = async ({
+  userId,
+  threadId,
+  messageId,
+  embedding,
+}) => {
   if (!Array.isArray(embedding) || embedding.length === 0) {
     throw new Error("Generated embedding is empty or invalid");
   }
@@ -40,10 +50,17 @@ const loadThreadWithSettings = async (threadId, userId) => {
 
 export const getProviders = async (req, res) => {
   try {
-    return sendResponse(res, 200, "AI providers fetched successfully", AI_PROVIDERS);
+    return sendResponse(
+      res,
+      200,
+      "AI providers fetched successfully",
+      AI_PROVIDERS,
+    );
   } catch (error) {
     console.error("getProviders error:", error);
-    return sendResponse(res, 500, "Failed to fetch AI providers", { error: error.message });
+    return sendResponse(res, 500, "Failed to fetch AI providers", {
+      error: error.message,
+    });
   }
 };
 
@@ -107,15 +124,21 @@ export const generate = async (req, res) => {
           ? new AIMessage(m.content)
           : m.role === "tool"
             ? new ToolMessage(m.content)
-            : new HumanMessage(m.content)
+            : new HumanMessage(m.content),
       ),
       new HumanMessage(message),
     ];
 
-    const response = await generateMessage(promptText, formattedMessages, provider, model, {
-      temperature: aiSettings.temperature,
-      maxOutputTokens: aiSettings.maxOutputTokens,
-    });
+    const response = await generateMessage(
+      promptText,
+      formattedMessages,
+      provider,
+      model,
+      {
+        temperature: aiSettings.temperature,
+        maxOutputTokens: aiSettings.maxOutputTokens,
+      },
+    );
 
     const aiContent =
       typeof response.content === "string"
@@ -132,7 +155,8 @@ export const generate = async (req, res) => {
         model,
         provider,
         inputTokens: response.response_metadata?.tokenUsage?.promptTokens || 0,
-        outputTokens: response.response_metadata?.tokenUsage?.completionTokens || 0,
+        outputTokens:
+          response.response_metadata?.tokenUsage?.completionTokens || 0,
         totalTokens: response.response_metadata?.tokenUsage?.totalTokens || 0,
         sequence: nextSequence + 1,
         questionId: userMessage.messageId,
@@ -158,7 +182,9 @@ export const generate = async (req, res) => {
     });
   } catch (error) {
     console.error(error.message);
-    return sendResponse(res, 500, "Failed to generate AI response", { error: error.message });
+    return sendResponse(res, 500, "Failed to generate AI response", {
+      error: error.message,
+    });
   }
 };
 
@@ -168,7 +194,8 @@ export const stream = async (req, res) => {
 
     if (!message) return sendResponse(res, 400, "Message is required");
     if (!threadId) return sendResponse(res, 400, "Thread is required");
-    if (!req.user?.userId) return sendResponse(res, 401, "Authentication required");
+    if (!req.user?.userId)
+      return sendResponse(res, 401, "Authentication required");
 
     const threadData = await loadThreadWithSettings(threadId, req.user.userId);
     if (!threadData) return sendResponse(res, 400, "Thread not found");
@@ -181,25 +208,42 @@ export const stream = async (req, res) => {
       ragEnabled: aiSettings.ragEnabled,
       knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
     });
-    if (!promptText) return sendResponse(res, 400, "Thread not found or system prompt missing");
+    if (!promptText)
+      return sendResponse(
+        res,
+        400,
+        "Thread not found or system prompt missing",
+      );
 
-    const existingMessages = await prisma.message.findMany({
+    const summary = await prisma.summary.findFirst({
       where: { threadId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const messages = await prisma.message.findMany({
+      where: {
+        threadId,
+        ...(summary && {
+          sequence: { gt: summary.lastSummarizedMessageCount },
+        }),
+      },
       orderBy: { sequence: "asc" },
     });
-    const nextSequence = existingMessages.length + 1;
 
-    const historyMessages = existingMessages.slice(-10);
+    const historyMessages = messages;
     const formattedMessages = [
       ...historyMessages.map((m) =>
         m.role === "assistant"
           ? new AIMessage(m.content)
           : m.role === "tool"
             ? new ToolMessage(m.content)
-            : new HumanMessage(m.content)
+            : new HumanMessage(m.content),
       ),
       new HumanMessage(message),
     ];
+
+    let nextSequence = (summary && summary.lastSummarizedMessageCount) || 0;
+    nextSequence = nextSequence + messages.length + 1;
 
     const userMessage = await prisma.message.create({
       data: {
@@ -217,23 +261,37 @@ export const stream = async (req, res) => {
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
-    res.write(`data: ${JSON.stringify({ type: "prompt", prompt: promptText })}\n\n`);
+    res.write(
+      `data: ${JSON.stringify({ type: "prompt", prompt: promptText })}\n\n`,
+    );
 
     let fullContent = "";
     let interrupted = false;
 
+    const summaryText = summary?.summary || "";
+
     try {
-      const responseStream = await streamMessage(promptText, formattedMessages, model, {
-        temperature: aiSettings.temperature,
-        maxOutputTokens: aiSettings.maxOutputTokens,
-        knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
-        ragEnabled: aiSettings.ragEnabled,
-      }, req.user.userId, threadId);
+      const responseStream = await streamMessage(
+        promptText,
+        summaryText,
+        [new HumanMessage(message)],
+        model,
+        {
+          temperature: aiSettings.temperature,
+          maxOutputTokens: aiSettings.maxOutputTokens,
+          knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
+          ragEnabled: aiSettings.ragEnabled,
+        },
+        req.user.userId,
+        threadId,
+      );
 
       for await (const chunk of responseStream) {
         if (chunk?.type === "interrupt") {
           interrupted = true;
-          res.write(`data: ${JSON.stringify({ type: "interrupt", interrupt: chunk.interrupt })}\n\n`);
+          res.write(
+            `data: ${JSON.stringify({ type: "interrupt", interrupt: chunk.interrupt })}\n\n`,
+          );
           continue;
         }
 
@@ -293,7 +351,9 @@ export const stream = async (req, res) => {
   } catch (error) {
     console.error("Stream error:", error);
     if (!res.headersSent) {
-      return sendResponse(res, 500, "Failed to stream AI response", { error: error.message });
+      return sendResponse(res, 500, "Failed to stream AI response", {
+        error: error.message,
+      });
     }
     res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
     res.end();
@@ -305,7 +365,8 @@ export const resume = async (req, res) => {
     const { threadId, decision } = req.body;
 
     if (!threadId) return sendResponse(res, 400, "Thread is required");
-    if (!req.user?.userId) return sendResponse(res, 401, "Authentication required");
+    if (!req.user?.userId)
+      return sendResponse(res, 401, "Authentication required");
     if (decision == null || typeof decision !== "object") {
       return sendResponse(res, 400, "Decision is required");
     }
@@ -323,7 +384,9 @@ export const resume = async (req, res) => {
       orderBy: { sequence: "asc" },
     });
     const nextSequence = existingMessages.length + 1;
-    const lastUserMessage = [...existingMessages].reverse().find((m) => m.role === "user");
+    const lastUserMessage = [...existingMessages]
+      .reverse()
+      .find((m) => m.role === "user");
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -350,7 +413,9 @@ export const resume = async (req, res) => {
       for await (const chunk of responseStream) {
         if (chunk?.type === "interrupt") {
           interrupted = true;
-          res.write(`data: ${JSON.stringify({ type: "interrupt", interrupt: chunk.interrupt })}\n\n`);
+          res.write(
+            `data: ${JSON.stringify({ type: "interrupt", interrupt: chunk.interrupt })}\n\n`,
+          );
           continue;
         }
 
@@ -382,7 +447,11 @@ export const resume = async (req, res) => {
             totalTokens: inputTokens + outputTokens,
             sequence: nextSequence,
             questionId: lastUserMessage?.messageId || null,
-            promptText: JSON.stringify({ resumed: true, decision: hitlDecision }, null, 2),
+            promptText: JSON.stringify(
+              { resumed: true, decision: hitlDecision },
+              null,
+              2,
+            ),
             aiSettingId: threadData.aiSettingId || null,
           },
         });
@@ -394,7 +463,9 @@ export const resume = async (req, res) => {
   } catch (error) {
     console.error("Resume error:", error);
     if (!res.headersSent) {
-      return sendResponse(res, 500, "Failed to resume AI response", { error: error.message });
+      return sendResponse(res, 500, "Failed to resume AI response", {
+        error: error.message,
+      });
     }
     res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
     res.end();
@@ -422,7 +493,11 @@ export const getThreadUsage = async (req, res) => {
     });
 
     const history = messages
-      .filter((m) => (m.inputTokens && m.inputTokens > 0) || (m.outputTokens && m.outputTokens > 0))
+      .filter(
+        (m) =>
+          (m.inputTokens && m.inputTokens > 0) ||
+          (m.outputTokens && m.outputTokens > 0),
+      )
       .map((m) => ({
         sequence: m.sequence,
         inputTokens: m.inputTokens || 0,
@@ -438,14 +513,21 @@ export const getThreadUsage = async (req, res) => {
         acc.totalTokens += msg.totalTokens || 0;
         return acc;
       },
-      { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+      { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     );
 
     totalUsage.history = history;
 
-    return sendResponse(res, 200, "Thread usage fetched successfully", totalUsage);
+    return sendResponse(
+      res,
+      200,
+      "Thread usage fetched successfully",
+      totalUsage,
+    );
   } catch (error) {
     console.error("getThreadUsage error:", error);
-    return sendResponse(res, 500, "Failed to fetch thread usage", { error: error.message });
+    return sendResponse(res, 500, "Failed to fetch thread usage", {
+      error: error.message,
+    });
   }
 };

@@ -49,6 +49,7 @@ model Thread {
   books     Book[]     @relation("ThreadBooks")
   notes     Note[]     @relation("ThreadNotes")
   knowledgeLinks ThreadKnowledgeSource[]
+  summaries      Summary[]
 
   @@index([userId])
   @@index([aiSettingId])
@@ -80,10 +81,27 @@ model Message {
   aiSetting AiSetting? @relation(fields: [aiSettingId], references: [aiSettingId], onDelete: SetNull)
 
   documents Document[] @relation("MessageDocuments")
+  summaries  Summary[]  @relation("MessageSummaries")
 
   @@index([threadId])
   @@index([questionId])
   @@index([aiSettingId])
+}
+  
+model Summary {
+  summaryId                  String   @id @default(uuid())
+  threadId                   String
+  summary                    String
+  lastSummarizedMessageId    String
+  lastSummarizedMessageCount Int
+  tokenCount                 Int
+  createdAt                  DateTime @default(now())
+
+  thread                Thread  @relation(fields: [threadId], references: [threadId], onDelete: Cascade)
+  lastSummarizedMessage Message @relation("MessageSummaries", fields: [lastSummarizedMessageId], references: [messageId], onDelete: Cascade)
+
+  @@index([threadId])
+  @@index([lastSummarizedMessageId])
 }
 
 model SystemPrompt {
