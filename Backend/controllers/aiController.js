@@ -13,6 +13,7 @@ import { encode } from "gpt-tokenizer";
 import { prompt } from "../utils/systemPrompts.js";
 import { randomUUID } from "node:crypto";
 import { resolveThreadAiSettings } from "../services/aiSettingService.js";
+import { enqueueMemoryGeneration } from "../services/memoryQueueService.js";
 
 const saveDocumentEmbedding = async ({
   userId,
@@ -147,7 +148,7 @@ export const generate = async (req, res) => {
           ? ""
           : JSON.stringify(response.content);
 
-    await prisma.message.create({
+    const dbMessage = await prisma.message.create({
       data: {
         threadId,
         role: "assistant",
@@ -164,16 +165,6 @@ export const generate = async (req, res) => {
         aiSettingId: threadData.aiSettingId || null,
       },
     });
-
-    if (aiSettings.ragEnabled) {
-      const embedding = await generateEmbedding(aiContent);
-      await saveDocumentEmbedding({
-        userId: req.user.userId,
-        threadId,
-        messageId: userMessage.messageId,
-        embedding,
-      });
-    }
 
     return sendResponse(res, 200, "AI response generated successfully", {
       content: aiContent,
@@ -256,6 +247,22 @@ export const stream = async (req, res) => {
       },
     });
 
+    await enqueueMemoryGeneration({
+      userId: req.user.userId,
+      messageId: userMessage.messageId,
+      threadId: threadId,
+    });
+
+    if (aiSettings.ragEnabled) {
+      const embedding = await generateEmbedding(aiContent);
+      await saveDocumentEmbedding({
+        userId: req.user.userId,
+        threadId,
+        messageId: userMessage.messageId,
+        embedding,
+      });
+    }
+
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -271,38 +278,40 @@ export const stream = async (req, res) => {
     const summaryText = summary?.summary || "";
 
     try {
-      const responseStream = await streamMessage(
-        promptText,
-        summaryText,
-        [new HumanMessage(message)],
-        model,
-        {
-          temperature: aiSettings.temperature,
-          maxOutputTokens: aiSettings.maxOutputTokens,
-          knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
-          ragEnabled: aiSettings.ragEnabled,
-        },
-        req.user.userId,
-        threadId,
-      );
+      // const responseStream = await streamMessage(
+      //   promptText,
+      //   summaryText,
+      //   [new HumanMessage(message)],
+      //   model,
+      //   {
+      //     temperature: aiSettings.temperature,
+      //     maxOutputTokens: aiSettings.maxOutputTokens,
+      //     knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
+      //     ragEnabled: aiSettings.ragEnabled,
+      //   },
+      //   req.user.userId,
+      //   threadId,
+      // );
 
-      for await (const chunk of responseStream) {
-        if (chunk?.type === "interrupt") {
-          interrupted = true;
-          res.write(
-            `data: ${JSON.stringify({ type: "interrupt", interrupt: chunk.interrupt })}\n\n`,
-          );
-          continue;
-        }
+      // for await (const chunk of responseStream) {
+      //   if (chunk?.type === "interrupt") {
+      //     interrupted = true;
+      //     res.write(
+      //       `data: ${JSON.stringify({ type: "interrupt", interrupt: chunk.interrupt })}\n\n`,
+      //     );
+      //     continue;
+      //   }
 
-        const content =
-          chunk?.type === "content"
-            ? chunk.content || ""
-            : chunk?.content || "";
-        if (!content) continue;
-        fullContent += content;
-        res.write(`data: ${JSON.stringify({ type: "content", content })}\n\n`);
-      }
+      //   const content =
+      //     chunk?.type === "content"
+      //       ? chunk.content || ""
+      //       : chunk?.content || "";
+      //   if (!content) continue;
+      //   fullContent += content;
+      //   res.write(`data: ${JSON.stringify({ type: "content", content })}\n\n`);
+      // }
+
+      return ""
     } catch (streamErr) {
       console.error("Stream generation error:", streamErr);
       res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);

@@ -14,6 +14,7 @@ import swaggerUi from "swagger-ui-express";
 import swaggerSpec from "./docs/swagger.js";
 
 import { initializeCheckpointer } from "./utils/checkpointer.js";
+import { startPgBoss } from "./config/startPgBoss.js";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -87,6 +88,7 @@ const startServer = async () => {
   await initializeDB();
   await initializeCheckpointer();
   const mcpServer = createLearningHubMcpServer();
+  await startPgBoss();
 
   app.all("/mcp", async (req, res, next) => {
     const transport = new NodeStreamableHTTPServerTransport({

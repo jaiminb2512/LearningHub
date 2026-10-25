@@ -33,6 +33,7 @@
     "@modelcontextprotocol/node": "^2.1.0",
     "@modelcontextprotocol/server": "^2.2.0",
     "@opentelemetry/sdk-node": "^0.222.0",
+    "@pg-boss/dashboard": "^1.12.1",
     "@prisma/client": "^6.18.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
@@ -47,6 +48,7 @@
     "nodemon": "^3.1.10",
     "pdf-parse": "^2.4.5",
     "pg": "^8.16.3",
+    "pg-boss": "^12.38.0",
     "prisma": "^6.18.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
