@@ -97,7 +97,6 @@ export const prompt = async (
     if (memories.length > 0) {
       const memoryContext = formatLongTermMemoryContext(memories);
       promptText += `\n\n--- Long-Term Memory Context ---\nThe following are relevant memories about the user from previous conversations. Use them to personalize your response, but do not explicitly mention that you are recalling memories unless asked.\n${memoryContext}`;
-      console.log("memoryContext", memoryContext)
     }
   } catch (err) {
     console.error("Long-term memory retrieval error:", err.message);
