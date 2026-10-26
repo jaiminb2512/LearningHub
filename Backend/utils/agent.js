@@ -40,11 +40,15 @@ import {
 } from "../services/observabilityService.js";
 import { RemoveMessage } from "@langchain/core/messages";
 import { MCPAdapter } from "@langchain/mcp-adapters";
-
-dotenv.config();
-
 import { getCheckpointer } from "./checkpointer.js";
 import { createSummary, updateSummary } from "../services/summaryService.js";
+import { getPrompt } from "../utils/prompts.js"
+
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const graphState = Annotation.Root({
   ...MessagesAnnotation.spec,
@@ -53,6 +57,30 @@ const graphState = Annotation.Root({
     default: () => "",
   }),
 });
+
+const geminiModel = (model) => {
+  return new ChatGoogleGenerativeAI({
+    model: model,
+    apiKey: process.env.GEMINI_API_KEY,
+    temperature: 0,
+  });
+}
+
+export const generateMemory = async (text) => {
+  const memoryModel = geminiModel("gemini-3.1-flash-lite-preview");
+  const prompt = getPrompt("generateMemoryPrompt");
+  const memory = await memoryModel.invoke([
+    {
+      role: "system",
+      content: prompt,
+    },
+    {
+      role: "human",
+      content: `Input text:\n${text}`,
+    },
+  ]);
+  return memory?.content;
+};
 
 const buildTools = async (
   userId,
@@ -97,11 +125,7 @@ const buildTools = async (
   return tools;
 };
 
-const summarizationModel = new ChatGoogleGenerativeAI({
-  model: "gemini-3.1-flash-lite-preview",
-  apiKey: process.env.GEMINI_API_KEY,
-  temperature: 0,
-});
+const summarizationModel = geminiModel("gemini-3.1-flash-lite-preview")
 
 const generateConversationSummary = async ({ previousSummary, messages }) => {
   const conversation = messages

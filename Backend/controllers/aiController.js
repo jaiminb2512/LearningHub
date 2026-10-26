@@ -278,38 +278,38 @@ export const stream = async (req, res) => {
     const summaryText = summary?.summary || "";
 
     try {
-      // const responseStream = await streamMessage(
-      //   promptText,
-      //   summaryText,
-      //   [new HumanMessage(message)],
-      //   model,
-      //   {
-      //     temperature: aiSettings.temperature,
-      //     maxOutputTokens: aiSettings.maxOutputTokens,
-      //     knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
-      //     ragEnabled: aiSettings.ragEnabled,
-      //   },
-      //   req.user.userId,
-      //   threadId,
-      // );
+      const responseStream = streamMessage(
+        promptText,
+        summaryText,
+        [new HumanMessage(message)],
+        model,
+        {
+          temperature: aiSettings.temperature,
+          maxOutputTokens: aiSettings.maxOutputTokens,
+          knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
+          ragEnabled: aiSettings.ragEnabled,
+        },
+        req.user.userId,
+        threadId,
+      );
 
-      // for await (const chunk of responseStream) {
-      //   if (chunk?.type === "interrupt") {
-      //     interrupted = true;
-      //     res.write(
-      //       `data: ${JSON.stringify({ type: "interrupt", interrupt: chunk.interrupt })}\n\n`,
-      //     );
-      //     continue;
-      //   }
+      for await (const chunk of responseStream) {
+        if (chunk?.type === "interrupt") {
+          interrupted = true;
+          res.write(
+            `data: ${JSON.stringify({ type: "interrupt", interrupt: chunk.interrupt })}\n\n`,
+          );
+          continue;
+        }
 
-      //   const content =
-      //     chunk?.type === "content"
-      //       ? chunk.content || ""
-      //       : chunk?.content || "";
-      //   if (!content) continue;
-      //   fullContent += content;
-      //   res.write(`data: ${JSON.stringify({ type: "content", content })}\n\n`);
-      // }
+        const content =
+          chunk?.type === "content"
+            ? chunk.content || ""
+            : chunk?.content || "";
+        if (!content) continue;
+        fullContent += content;
+        res.write(`data: ${JSON.stringify({ type: "content", content })}\n\n`);
+      }
 
       return ""
     } catch (streamErr) {
