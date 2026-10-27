@@ -38,10 +38,8 @@ import {
   messagePreview,
   getLangfuseCallbackHandler,
 } from "../services/observabilityService.js";
-import { RemoveMessage } from "@langchain/core/messages";
 import { MCPAdapter } from "@langchain/mcp-adapters";
 import { getCheckpointer } from "./checkpointer.js";
-import { createSummary, updateSummary } from "../services/summaryService.js";
 import { getPrompt } from "../utils/prompts.js"
 
 import path from "node:path";
@@ -127,15 +125,13 @@ const buildTools = async (
 
 const summarizationModel = geminiModel("gemini-3.1-flash-lite-preview")
 
-const generateConversationSummary = async ({ previousSummary, messages }) => {
+export const generateConversationSummary = async ({ previousSummary, messages }) => {
   const conversation = messages
     .map((message) => {
       const role = typeof message.getType === "function" ? message.getType() : message.role || "user";
       return `${role}: ${message.content}`;
     })
     .join("\n");
-
-  console.log("Conversation", conversation)
 
   const response = await summarizationModel.invoke([
     {
@@ -276,65 +272,11 @@ const buildGraph = async ({
     return END;
   };
 
-  const summaryNode = async (state) => {
-    const text = state.messages
-      .map((m) =>
-        typeof m.content === "string"
-          ? m.content
-          : Array.isArray(m.content)
-            ? m.content.map((c) => c?.text || "").join(" ")
-            : JSON.stringify(m.content || "")
-      )
-      .join("\n");
-
-    const tokenResult = await countTokens(text);
-    const tokenCount = tokenResult?.totalTokens || 0;
-
-    if (tokenCount > 1000) {
-      const newSummary = await generateConversationSummary({
-        previousSummary: state.summary,
-        messages: state.messages,
-      });
-
-      const summaryTokenResult = await countTokens(newSummary);
-      const summaryTokens = summaryTokenResult?.totalTokens || 0;
-
-
-      if (!state.summary || state.summary === "") {
-        await createSummary({
-          threadId,
-          summary: newSummary,
-          tokenCount: summaryTokens,
-        });
-
-      } else {
-        await updateSummary({
-          threadId,
-          summary: newSummary,
-          tokenCount: summaryTokens,
-        });
-
-      }
-
-      const removeMessages = state.messages
-        .filter((m) => m.id)
-        .map((m) => new RemoveMessage({ id: m.id }));
-      return {
-        summary: newSummary,
-        messages: removeMessages,
-      };
-    }
-
-    return { summary: state.summary || "" };
-  };
-
   return new StateGraph(graphState)
     .addNode("agent", callModel)
     .addNode("tools", toolNode)
-    .addNode("summaryNode", summaryNode)
 
     .addEdge(START, "agent")
-    .addEdge(START, "summaryNode")
 
     .addConditionalEdges("agent", shouldContinue, {
       tools: "tools",
@@ -342,7 +284,6 @@ const buildGraph = async ({
     })
 
     .addEdge("tools", "agent")
-    .addEdge("summaryNode", END)
 
     .compile({ checkpointer: getCheckpointer() });
 

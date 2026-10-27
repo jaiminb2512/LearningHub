@@ -14,6 +14,7 @@ import { prompt } from "../utils/systemPrompts.js";
 import { randomUUID } from "node:crypto";
 import { resolveThreadAiSettings } from "../services/aiSettingService.js";
 import { enqueueMemoryGeneration } from "../services/memoryQueueService.js";
+import { enqueueSummaryGeneration } from "../services/summaryQueueService.js";
 
 const saveDocumentEmbedding = async ({
   userId,
@@ -351,6 +352,16 @@ export const stream = async (req, res) => {
           } catch (embedErr) {
             console.error("Chat memory embedding error:", embedErr);
           }
+        }
+
+        try {
+          await enqueueSummaryGeneration({
+            userId: req.user.userId,
+            threadId,
+            messageId: userMessage.messageId,
+          });
+        } catch (summaryQueueErr) {
+          console.error("Summary queue error:", summaryQueueErr.message);
         }
       }
     }
