@@ -38,13 +38,15 @@ import {
   messagePreview,
   getLangfuseCallbackHandler,
 } from "../services/observabilityService.js";
-import { RemoveMessage } from "@langchain/core/messages";
 import { MCPAdapter } from "@langchain/mcp-adapters";
-
-dotenv.config();
-
 import { getCheckpointer } from "./checkpointer.js";
-import { createSummary, updateSummary } from "../services/summaryService.js";
+import { getPrompt } from "../utils/prompts.js"
+
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const graphState = Annotation.Root({
   ...MessagesAnnotation.spec,
@@ -53,6 +55,30 @@ const graphState = Annotation.Root({
     default: () => "",
   }),
 });
+
+const geminiModel = (model) => {
+  return new ChatGoogleGenerativeAI({
+    model: model,
+    apiKey: process.env.GEMINI_API_KEY,
+    temperature: 0,
+  });
+}
+
+export const generateMemory = async (text) => {
+  const memoryModel = geminiModel("gemini-3.1-flash-lite-preview");
+  const prompt = getPrompt("generateMemoryPrompt");
+  const memory = await memoryModel.invoke([
+    {
+      role: "system",
+      content: prompt,
+    },
+    {
+      role: "human",
+      content: `Input text:\n${text}`,
+    },
+  ]);
+  return memory?.content;
+};
 
 const buildTools = async (
   userId,
@@ -97,21 +123,15 @@ const buildTools = async (
   return tools;
 };
 
-const summarizationModel = new ChatGoogleGenerativeAI({
-  model: "gemini-3.1-flash-lite-preview",
-  apiKey: process.env.GEMINI_API_KEY,
-  temperature: 0,
-});
+const summarizationModel = geminiModel("gemini-3.1-flash-lite-preview")
 
-const generateConversationSummary = async ({ previousSummary, messages }) => {
+export const generateConversationSummary = async ({ previousSummary, messages }) => {
   const conversation = messages
     .map((message) => {
       const role = typeof message.getType === "function" ? message.getType() : message.role || "user";
       return `${role}: ${message.content}`;
     })
     .join("\n");
-
-  console.log("Conversation", conversation)
 
   const response = await summarizationModel.invoke([
     {
@@ -252,65 +272,11 @@ const buildGraph = async ({
     return END;
   };
 
-  const summaryNode = async (state) => {
-    const text = state.messages
-      .map((m) =>
-        typeof m.content === "string"
-          ? m.content
-          : Array.isArray(m.content)
-            ? m.content.map((c) => c?.text || "").join(" ")
-            : JSON.stringify(m.content || "")
-      )
-      .join("\n");
-
-    const tokenResult = await countTokens(text);
-    const tokenCount = tokenResult?.totalTokens || 0;
-
-    if (tokenCount > 1000) {
-      const newSummary = await generateConversationSummary({
-        previousSummary: state.summary,
-        messages: state.messages,
-      });
-
-      const summaryTokenResult = await countTokens(newSummary);
-      const summaryTokens = summaryTokenResult?.totalTokens || 0;
-
-
-      if (!state.summary || state.summary === "") {
-        await createSummary({
-          threadId,
-          summary: newSummary,
-          tokenCount: summaryTokens,
-        });
-
-      } else {
-        await updateSummary({
-          threadId,
-          summary: newSummary,
-          tokenCount: summaryTokens,
-        });
-
-      }
-
-      const removeMessages = state.messages
-        .filter((m) => m.id)
-        .map((m) => new RemoveMessage({ id: m.id }));
-      return {
-        summary: newSummary,
-        messages: removeMessages,
-      };
-    }
-
-    return { summary: state.summary || "" };
-  };
-
   return new StateGraph(graphState)
     .addNode("agent", callModel)
     .addNode("tools", toolNode)
-    .addNode("summaryNode", summaryNode)
 
     .addEdge(START, "agent")
-    .addEdge(START, "summaryNode")
 
     .addConditionalEdges("agent", shouldContinue, {
       tools: "tools",
@@ -318,7 +284,6 @@ const buildGraph = async ({
     })
 
     .addEdge("tools", "agent")
-    .addEdge("summaryNode", END)
 
     .compile({ checkpointer: getCheckpointer() });
 

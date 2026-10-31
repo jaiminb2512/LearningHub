@@ -28,6 +28,8 @@ model User {
   notes                Note[]         @relation("UserNotes")
   aiSettings           AiSetting[]    @relation("UserAiSettings")
   knowledgeSources     KnowledgeSource[] @relation("UserKnowledgeSources")
+  longTermMemories LongTermMemory[] @relation("UserLongTermMemories")
+  memoryGenerationTasks MemoryGenerationTask[] @relation("UserMemoryGenerationTasks")
 }
 
 model Thread {
@@ -43,6 +45,7 @@ model Thread {
   creator      User          @relation("ThreadCreatedBy", fields: [userId], references: [userId], onDelete: Cascade)
   systemPrompt SystemPrompt? @relation(fields: [systemPromptId], references: [systemPromptId], onDelete: SetNull)
   aiSetting    AiSetting?    @relation(fields: [aiSettingId], references: [aiSettingId], onDelete: SetNull)
+  sourceMemories LongTermMemory[] @relation("MemorySourceThread")
 
   messages  Message[]
   documents Document[] @relation("ThreadDocuments")
@@ -53,6 +56,7 @@ model Thread {
 
   @@index([userId])
   @@index([aiSettingId])
+  memoryGenerationTasks MemoryGenerationTask[] @relation("ThreadMemoryGenerationTasks")
 }
 
 model Message {
@@ -79,6 +83,7 @@ model Message {
   createdAt DateTime @default(now())
   thread    Thread   @relation(fields: [threadId], references: [threadId], onDelete: Cascade)
   aiSetting AiSetting? @relation(fields: [aiSettingId], references: [aiSettingId], onDelete: SetNull)
+  sourceMemories LongTermMemory[] @relation("MemorySourceMessage")
 
   documents Document[] @relation("MessageDocuments")
   summaries  Summary[]  @relation("MessageSummaries")
@@ -86,6 +91,7 @@ model Message {
   @@index([threadId])
   @@index([questionId])
   @@index([aiSettingId])
+  memoryGenerationTasks MemoryGenerationTask[] @relation("MessageMemoryGenerationTasks")
 }
   
 model Summary {
@@ -102,6 +108,55 @@ model Summary {
 
   @@index([threadId])
   @@index([lastSummarizedMessageId])
+}
+
+model LongTermMemory {
+  longTermMemoryId   String @id @default(uuid())
+  userId     String
+
+  memoryType String     // PROFILE, PROJECT, EPISODIC, SEMANTIC, PERIODIC
+  category   String
+  content    String
+  normalizedContent String
+  fingerprint String
+
+  metadata   Json?
+  confidence Float?
+  importance Int     @default(3)
+
+  // ACTIVE, SUPERSEDED, ARCHIVED
+  status String @default("ACTIVE")
+
+  sourceThreadId  String?
+  sourceMessageId String?
+
+  embedding           Unsupported("vector(3072)")?
+  embeddingModel      String?
+  embeddingDimensions Int      @default(3072)
+  embeddedAt          DateTime?
+
+  validFrom      DateTime?
+  validUntil     DateTime?
+  lastAccessedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation("UserLongTermMemories", fields: [userId], references: [userId], onDelete: Cascade)
+
+  sourceThread Thread? @relation("MemorySourceThread", fields: [sourceThreadId], references: [threadId], onDelete: SetNull)
+
+  sourceMessage Message? @relation("MemorySourceMessage", fields: [sourceMessageId], references: [messageId], onDelete: SetNull)
+
+  @@unique([userId, fingerprint])
+
+  @@index([userId, status])
+  @@index([userId, memoryType, status])
+  @@index([userId, category, status])
+  @@index([sourceThreadId])
+  @@index([sourceMessageId])
+  @@index([updatedAt])
+  memoryGenerationTasks MemoryGenerationTask[] @relation("LongTermMemoryGenerationTasks")
 }
 
 model SystemPrompt {
@@ -121,6 +176,34 @@ model SystemPrompt {
   threads Thread[]
 
   @@index([createdBy])
+}
+
+model MemoryGenerationTask {
+  taskId           String   @id @default(uuid())
+  userId           String
+  threadId         String
+  longTermMemoryId String?   // optional link to LongTermMemory
+  status           String   @default("PENDING") // PENDING, RUNNING, SUCCESS, FAILED
+  errorMessage     String?
+  attempts         Int      @default(0)
+  scheduledAt      DateTime?
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user          User          @relation("UserMemoryGenerationTasks", fields: [userId], references: [userId], onDelete: Cascade)
+  thread        Thread        @relation("ThreadMemoryGenerationTasks", fields: [threadId], references: [threadId], onDelete: Cascade)
+  longTermMemory LongTermMemory? @relation("LongTermMemoryGenerationTasks", fields: [longTermMemoryId], references: [longTermMemoryId], onDelete: SetNull)
+
+  sourceMessageId String?
+  outcome         String? // CREATED, UPDATED, DUPLICATE, NO_MEMORY
+  sourceMessage Message? @relation("MessageMemoryGenerationTasks", fields: [sourceMessageId], references: [messageId], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([threadId])
+  @@index([status])
+  @@unique([sourceMessageId])
 }
 
 model Document {

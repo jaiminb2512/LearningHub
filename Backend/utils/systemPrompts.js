@@ -4,6 +4,7 @@ import {
   semanticSearch,
   semanticSearchKnowledgeChunks,
 } from "./RAGService.js";
+import { getRelevantMemories } from "../services/longTermMemoryService.js";
 
 export const fetchSystemPrompt = async (name) => {
   const systemPrompt = await prisma.systemPrompt.findFirst({
@@ -48,6 +49,21 @@ const formatChatMemoryContext = (documents = []) => {
     .join("\n\n");
 };
 
+const formatLongTermMemoryContext = (memories = []) => {
+  if (!memories.length) {
+    return "";
+  }
+
+  return memories
+    .map((m, i) => {
+      const type = m.memoryType || "UNKNOWN";
+      const category = m.category || "";
+      const score = m.score != null ? ` (relevance: ${Number(m.score).toFixed(3)})` : "";
+      return `[${i + 1}] ${type}/${category}${score}: ${m.content}`;
+    })
+    .join("\n");
+};
+
 export const prompt = async (
   userId,
   threadId,
@@ -69,6 +85,21 @@ export const prompt = async (
   let promptText = threadData.systemPrompt?.prompt;
   if (!promptText) {
     return null;
+  }
+
+  // Retrieve relevant long-term memories based on user message
+  try {
+    const memories = await getRelevantMemories(userId, userMessage, {
+      limit: 5,
+      minSimilarity: 0.6,
+    });
+
+    if (memories.length > 0) {
+      const memoryContext = formatLongTermMemoryContext(memories);
+      promptText += `\n\n--- Long-Term Memory Context ---\nThe following are relevant memories about the user from previous conversations. Use them to personalize your response, but do not explicitly mention that you are recalling memories unless asked.\n${memoryContext}`;
+    }
+  } catch (err) {
+    console.error("Long-term memory retrieval error:", err.message);
   }
 
   const useKnowledge = knowledgeRagEnabled !== false;
