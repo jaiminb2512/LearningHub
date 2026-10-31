@@ -71,6 +71,7 @@ export const prompt = async (
   {
     ragEnabled = true,
     knowledgeRagEnabled = true,
+    longTermMemoryEnabled = true,
   } = {}
 ) => {
   const threadData = await prisma.thread.findFirst({
@@ -88,18 +89,20 @@ export const prompt = async (
   }
 
   // Retrieve relevant long-term memories based on user message
-  try {
-    const memories = await getRelevantMemories(userId, userMessage, {
-      limit: 5,
-      minSimilarity: 0.6,
-    });
+  if (longTermMemoryEnabled !== false) {
+    try {
+      const memories = await getRelevantMemories(userId, userMessage, {
+        limit: 5,
+        minSimilarity: 0.6,
+      });
 
-    if (memories.length > 0) {
-      const memoryContext = formatLongTermMemoryContext(memories);
-      promptText += `\n\n--- Long-Term Memory Context ---\nThe following are relevant memories about the user from previous conversations. Use them to personalize your response, but do not explicitly mention that you are recalling memories unless asked.\n${memoryContext}`;
+      if (memories.length > 0) {
+        const memoryContext = formatLongTermMemoryContext(memories);
+        promptText += `\n\n--- Long-Term Memory Context ---\nThe following are relevant memories about the user from previous conversations. Use them to personalize your response, but do not explicitly mention that you are recalling memories unless asked.\n${memoryContext}`;
+      }
+    } catch (err) {
+      console.error("Long-term memory retrieval error:", err.message);
     }
-  } catch (err) {
-    console.error("Long-term memory retrieval error:", err.message);
   }
 
   const useKnowledge = knowledgeRagEnabled !== false;

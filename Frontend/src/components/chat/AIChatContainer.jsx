@@ -63,6 +63,8 @@ const settingsFormFromJson = (json = {}) => ({
   maxOutputTokens: json.maxOutputTokens ?? DEFAULT_AI_SETTINGS_FORM.maxOutputTokens,
   ragEnabled: json.ragEnabled !== false,
   knowledgeRagEnabled: json.knowledgeRagEnabled !== false,
+  longTermMemoryEnabled: json.longTermMemoryEnabled !== false,
+  summaryGenerationEnabled: json.summaryGenerationEnabled !== false,
   model: json.model || DEFAULT_AI_SETTINGS_FORM.model,
   provider: json.provider || DEFAULT_AI_SETTINGS_FORM.provider,
 });
@@ -869,6 +871,8 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
           maxOutputTokens: Number(aiSettingForm.maxOutputTokens),
           ragEnabled: Boolean(aiSettingForm.ragEnabled),
           knowledgeRagEnabled: Boolean(aiSettingForm.knowledgeRagEnabled),
+          longTermMemoryEnabled: Boolean(aiSettingForm.longTermMemoryEnabled),
+          summaryGenerationEnabled: Boolean(aiSettingForm.summaryGenerationEnabled),
           model: aiSettingForm.model,
           provider: aiSettingForm.provider,
         },
@@ -1868,6 +1872,43 @@ const AIChatContainer = ({ chatId, onSetHeaderActions }) => {
                 }
                 label="Chat memory RAG (store/search past replies)"
               />
+
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={Boolean(aiSettingForm.longTermMemoryEnabled)}
+                    disabled={!canEditAiOptions}
+                    onChange={(e) =>
+                      setAiSettingForm((prev) => ({
+                        ...prev,
+                        longTermMemoryEnabled: e.target.checked,
+                      }))
+                    }
+                  />
+                }
+                label="Long-term memory (remember facts across conversations)"
+              />
+
+              <Box>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={Boolean(aiSettingForm.summaryGenerationEnabled)}
+                      disabled={!canEditAiOptions}
+                      onChange={(e) =>
+                        setAiSettingForm((prev) => ({
+                          ...prev,
+                          summaryGenerationEnabled: e.target.checked,
+                        }))
+                      }
+                    />
+                  }
+                  label="Conversation summaries"
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", ml: 6, mt: -0.5 }}>
+                  When off, only the last 10 messages are sent as context.
+                </Typography>
+              </Box>
             </Box>
           )}
         </DialogContent>

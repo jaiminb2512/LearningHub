@@ -18,11 +18,16 @@ export const AI_PROVIDERS = [
   },
 ];
 
+/// Messages kept in context when summary generation is disabled
+export const FALLBACK_HISTORY_LIMIT = 10;
+
 export const DEFAULT_AI_SETTINGS = {
   temperature: 0.7,
   maxOutputTokens: 2048,
   ragEnabled: true,
   knowledgeRagEnabled: true,
+  longTermMemoryEnabled: true,
+  summaryGenerationEnabled: true,
   model: "gemini-3.1-flash-lite-preview",
   provider: "google",
 };
@@ -40,6 +45,8 @@ export const normalizeAiSettings = (raw = {}) => {
       : DEFAULT_AI_SETTINGS.maxOutputTokens,
     ragEnabled: raw.ragEnabled !== false,
     knowledgeRagEnabled: raw.knowledgeRagEnabled !== false,
+    longTermMemoryEnabled: raw.longTermMemoryEnabled !== false,
+    summaryGenerationEnabled: raw.summaryGenerationEnabled !== false,
     model: typeof raw.model === "string" && raw.model.trim()
       ? raw.model.trim()
       : DEFAULT_AI_SETTINGS.model,

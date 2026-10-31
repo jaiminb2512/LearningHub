@@ -29,18 +29,9 @@ import {
   Annotation,
 } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { normalizeHitlDecision } from "./hitl.js";
-import {
-  startChatTrace,
-  endTrace,
-  recordError,
-  flushObservability,
-  messagePreview,
-  getLangfuseCallbackHandler,
-} from "../services/observabilityService.js";
 import { MCPAdapter } from "@langchain/mcp-adapters";
 import { getCheckpointer } from "./checkpointer.js";
-import { getPrompt } from "../utils/prompts.js"
+import { getPrompt } from "../utils/prompts.js";
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,7 +53,7 @@ const geminiModel = (model) => {
     apiKey: process.env.GEMINI_API_KEY,
     temperature: 0,
   });
-}
+};
 
 export const generateMemory = async (text) => {
   const memoryModel = geminiModel("gemini-3.1-flash-lite-preview");
@@ -123,12 +114,18 @@ const buildTools = async (
   return tools;
 };
 
-const summarizationModel = geminiModel("gemini-3.1-flash-lite-preview")
+const summarizationModel = geminiModel("gemini-3.1-flash-lite-preview");
 
-export const generateConversationSummary = async ({ previousSummary, messages }) => {
+export const generateConversationSummary = async ({
+  previousSummary,
+  messages,
+}) => {
   const conversation = messages
     .map((message) => {
-      const role = typeof message.getType === "function" ? message.getType() : message.role || "user";
+      const role =
+        typeof message.getType === "function"
+          ? message.getType()
+          : message.role || "user";
       return `${role}: ${message.content}`;
     })
     .join("\n");
@@ -165,20 +162,16 @@ export const generateConversationSummary = async ({ previousSummary, messages })
   return typeof response.content === "string"
     ? response.content
     : response.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("\n");
-}
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n");
+};
 
 const isSystemMessage = (m) =>
   m?._getType?.() === "system" ||
   m?.getType?.() === "system" ||
   m?.role === "system";
 
-/**
- * Gemini requires exactly one system message and it must be first.
- * LangGraph state can accumulate / reorder system entries across tool loops.
- */
 const normalizeMessagesForGemini = (
   messages = [],
   summary = "",
@@ -222,7 +215,7 @@ const normalizeMessagesForGemini = (
   ];
 };
 
-const buildGraph = async ({
+export const buildGraph = async ({
   model,
   options,
   userId,
@@ -286,10 +279,9 @@ const buildGraph = async ({
     .addEdge("tools", "agent")
 
     .compile({ checkpointer: getCheckpointer() });
-
 };
 
-const extractInterruptPayload = (result) => {
+export const extractInterruptPayload = (result) => {
   const interrupts = result?.__interrupt__;
   if (!Array.isArray(interrupts) || interrupts.length === 0) {
     return null;
@@ -303,7 +295,7 @@ const extractInterruptPayload = (result) => {
   };
 };
 
-const extractAssistantText = (result) => {
+export const extractAssistantText = (result) => {
   const messages = result?.messages || [];
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const msg = messages[i];
@@ -320,193 +312,6 @@ const extractAssistantText = (result) => {
     }
   }
   return "";
-};
-
-/**
- * Run the agent graph for a new user turn.
- * Yields { type: "interrupt", interrupt } when HITL pauses,
- * otherwise yields { type: "content", content }.
- */
-export const streamMessage = async function* (
-  systemPrompt,
-  summary = "",
-  messages,
-  model,
-  options = {},
-  userId,
-  threadId,
-) {
-  const trace = startChatTrace({
-    name: "learninghub-chat",
-    userId,
-    threadId,
-    input: messagePreview(messages),
-    metadata: {
-      model,
-      flow: "stream",
-      ragEnabled: options.ragEnabled,
-    },
-  });
-
-  try {
-    const graph = await buildGraph({
-      model,
-      options,
-      userId,
-      threadId,
-      systemPrompt,
-      summary,
-      knowledgeRagEnabled: options.knowledgeRagEnabled,
-      ragEnabled: options.ragEnabled,
-    });
-
-    const langfuseHandler = getLangfuseCallbackHandler({
-      userId,
-      threadId,
-      metadata: { model, flow: "stream" },
-    });
-    const config = {
-      configurable: {
-        thread_id: threadId,
-      },
-      callbacks: langfuseHandler ? [langfuseHandler] : undefined,
-    };
-
-    // Keep system prompt out of graph state; inject only when calling Gemini.
-    const result = await graph.invoke({ messages, summary }, config);
-    const interruptPayload = extractInterruptPayload(result);
-
-    if (interruptPayload) {
-      endTrace(trace, {
-        output: {
-          status: "interrupted",
-          interrupt: {
-            type: interruptPayload.type,
-            action: interruptPayload.action,
-            message: interruptPayload.message,
-          },
-        },
-        metadata: { status: "interrupted" },
-      });
-      yield {
-        type: "interrupt",
-        interrupt: {
-          ...interruptPayload,
-          threadId,
-        },
-      };
-      return;
-    }
-
-    const content = extractAssistantText(result);
-    endTrace(trace, {
-      output: content,
-      metadata: { status: "completed" },
-    });
-    if (content) {
-      yield { type: "content", content };
-    }
-  } catch (error) {
-    recordError(trace, error);
-    throw error;
-  } finally {
-    await flushObservability();
-  }
-};
-
-/**
- * Resume a paused HITL graph for the same thread_id.
- */
-export const resumeMessage = async function* ({
-  threadId,
-  userId,
-  model,
-  options = {},
-  systemPrompt = "",
-  decision,
-}) {
-  const normalizedDecision = normalizeHitlDecision(decision);
-  const trace = startChatTrace({
-    name: "learninghub-chat-resume",
-    userId,
-    threadId,
-    input: {
-      decision: {
-        approved: normalizedDecision.approved,
-        redirected: normalizedDecision.redirected,
-        selected: normalizedDecision.selected,
-        hasUserMessage: Boolean(normalizedDecision.userMessage),
-      },
-    },
-    metadata: {
-      model,
-      flow: "resume",
-    },
-  });
-
-  try {
-    const graph = await buildGraph({
-      model,
-      options,
-      userId,
-      threadId,
-      systemPrompt,
-    });
-
-    const langfuseHandler = getLangfuseCallbackHandler({
-      userId,
-      threadId,
-      metadata: { model, flow: "resume" },
-    });
-    const config = {
-      configurable: {
-        thread_id: threadId,
-      },
-      callbacks: langfuseHandler ? [langfuseHandler] : undefined,
-    };
-
-    const result = await graph.invoke(
-      new Command({ resume: normalizedDecision }),
-      config,
-    );
-
-    const interruptPayload = extractInterruptPayload(result);
-    if (interruptPayload) {
-      endTrace(trace, {
-        output: {
-          status: "interrupted",
-          interrupt: {
-            type: interruptPayload.type,
-            action: interruptPayload.action,
-            message: interruptPayload.message,
-          },
-        },
-        metadata: { status: "interrupted" },
-      });
-      yield {
-        type: "interrupt",
-        interrupt: {
-          ...interruptPayload,
-          threadId,
-        },
-      };
-      return;
-    }
-
-    const content = extractAssistantText(result);
-    endTrace(trace, {
-      output: content,
-      metadata: { status: "completed" },
-    });
-    if (content) {
-      yield { type: "content", content };
-    }
-  } catch (error) {
-    recordError(trace, error);
-    throw error;
-  } finally {
-    await flushObservability();
-  }
 };
 
 export const generateMessage = async (

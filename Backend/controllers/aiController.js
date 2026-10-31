@@ -1,44 +1,20 @@
-import { AI_PROVIDERS, DEFAULT_AI_SETTINGS } from "../utils/aiConfig.js";
-import sendResponse from "../utils/response.js";
 import {
-  generateMessage,
-  streamMessage,
-  resumeMessage,
-  generateEmbedding,
-} from "../utils/agent.js";
+  AI_PROVIDERS,
+  DEFAULT_AI_SETTINGS,
+  FALLBACK_HISTORY_LIMIT,
+} from "../utils/aiConfig.js";
+import sendResponse from "../utils/response.js";
+import { generateMessage } from "../utils/agent.js";
+import { streamMessage, resumeMessage } from "../utils/messageHandler.js";
 import { normalizeHitlDecision } from "../utils/hitl.js";
 import prisma from "../dbConnect/prismaClient.js";
 import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 import { encode } from "gpt-tokenizer";
 import { prompt } from "../utils/systemPrompts.js";
-import { randomUUID } from "node:crypto";
 import { resolveThreadAiSettings } from "../services/aiSettingService.js";
 import { enqueueMemoryGeneration } from "../services/memoryQueueService.js";
 import { enqueueSummaryGeneration } from "../services/summaryQueueService.js";
-
-const saveDocumentEmbedding = async ({
-  userId,
-  threadId,
-  messageId,
-  embedding,
-}) => {
-  if (!Array.isArray(embedding) || embedding.length === 0) {
-    throw new Error("Generated embedding is empty or invalid");
-  }
-
-  const vectorValue = `[${embedding.join(",")}]`;
-
-  await prisma.$executeRaw`
-    INSERT INTO "Document" (
-      "id", "userId", "threadId", "messageId", "embedding",
-      "embeddingModel", "embeddingDimensions", "embeddedAt"
-    )
-    VALUES (
-      ${randomUUID()}, ${userId}, ${threadId}, ${messageId}, ${vectorValue}::vector,
-      ${"gemini-embedding-001"}, ${embedding.length}, ${new Date()}
-    )
-  `;
-};
+import { enqueueEmbeddingGeneration } from "../services/embeddingQueueService.js";
 
 const loadThreadWithSettings = async (threadId, userId) => {
   return prisma.thread.findFirst({
@@ -91,6 +67,7 @@ export const generate = async (req, res) => {
     let promptText = await prompt(req.user.userId, threadId, message, {
       ragEnabled: aiSettings.ragEnabled,
       knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
+      longTermMemoryEnabled: aiSettings.longTermMemoryEnabled,
     });
 
     if (!promptText) {
@@ -199,6 +176,7 @@ export const stream = async (req, res) => {
     const promptText = await prompt(req.user.userId, threadId, message, {
       ragEnabled: aiSettings.ragEnabled,
       knowledgeRagEnabled: aiSettings.knowledgeRagEnabled,
+      longTermMemoryEnabled: aiSettings.longTermMemoryEnabled,
     });
     if (!promptText)
       return sendResponse(
@@ -207,24 +185,34 @@ export const stream = async (req, res) => {
         "Thread not found or system prompt missing",
       );
 
-    const summary = await prisma.summary.findFirst({
-      where: { threadId },
-      orderBy: { createdAt: "desc" },
-    });
+    // With summaries off, fall back to a fixed window of recent messages.
+    const summary = aiSettings.summaryGenerationEnabled
+      ? await prisma.summary.findFirst({
+          where: { threadId },
+          orderBy: { createdAt: "desc" },
+        })
+      : null;
 
-    const messages = await prisma.message.findMany({
-      where: {
-        threadId,
-        ...(summary && {
-          sequence: { gt: summary.lastSummarizedMessageCount },
-        }),
-      },
-      orderBy: { sequence: "asc" },
-    });
+    const messages = aiSettings.summaryGenerationEnabled
+      ? await prisma.message.findMany({
+          where: {
+            threadId,
+            ...(summary && {
+              sequence: { gt: summary.lastSummarizedMessageCount },
+            }),
+          },
+          orderBy: { sequence: "asc" },
+        })
+      : (
+          await prisma.message.findMany({
+            where: { threadId },
+            orderBy: { sequence: "desc" },
+            take: FALLBACK_HISTORY_LIMIT,
+          })
+        ).reverse();
 
-    const historyMessages = messages;
     const formattedMessages = [
-      ...historyMessages.map((m) =>
+      ...messages.map((m) =>
         m.role === "assistant"
           ? new AIMessage(m.content)
           : m.role === "tool"
@@ -234,8 +222,11 @@ export const stream = async (req, res) => {
       new HumanMessage(message),
     ];
 
-    let nextSequence = (summary && summary.lastSummarizedMessageCount) || 0;
-    nextSequence = nextSequence + messages.length + 1;
+    // Sequence must reflect the whole thread, not just the loaded window.
+    const totalMessageCount = await prisma.message.count({
+      where: { threadId },
+    });
+    const nextSequence = totalMessageCount + 1;
 
     const userMessage = await prisma.message.create({
       data: {
@@ -248,20 +239,16 @@ export const stream = async (req, res) => {
       },
     });
 
-    await enqueueMemoryGeneration({
-      userId: req.user.userId,
-      messageId: userMessage.messageId,
-      threadId: threadId,
-    });
-
-    if (aiSettings.ragEnabled) {
-      const embedding = await generateEmbedding(aiContent);
-      await saveDocumentEmbedding({
-        userId: req.user.userId,
-        threadId,
-        messageId: userMessage.messageId,
-        embedding,
-      });
+    if (aiSettings.longTermMemoryEnabled) {
+      try {
+        await enqueueMemoryGeneration({
+          userId: req.user.userId,
+          messageId: userMessage.messageId,
+          threadId,
+        });
+      } catch (memoryQueueErr) {
+        console.error("Memory queue error:", memoryQueueErr.message);
+      }
     }
 
     res.setHeader("Content-Type", "text/event-stream");
@@ -311,8 +298,6 @@ export const stream = async (req, res) => {
         fullContent += content;
         res.write(`data: ${JSON.stringify({ type: "content", content })}\n\n`);
       }
-
-      return ""
     } catch (streamErr) {
       console.error("Stream generation error:", streamErr);
       res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);
@@ -323,7 +308,7 @@ export const stream = async (req, res) => {
         const inputTokens = encode(tokenPromptText).length;
         const outputTokens = encode(fullContent).length;
 
-        await prisma.message.create({
+        const assistantMessage = await prisma.message.create({
           data: {
             threadId,
             role: "assistant",
@@ -340,28 +325,28 @@ export const stream = async (req, res) => {
           },
         });
 
-        if (aiSettings.ragEnabled && fullContent) {
+        if (aiSettings.ragEnabled) {
           try {
-            const embedding = await generateEmbedding(fullContent);
-            await saveDocumentEmbedding({
+            await enqueueEmbeddingGeneration({
               userId: req.user.userId,
               threadId,
-              messageId: userMessage.messageId,
-              embedding,
+              messageId: assistantMessage.messageId,
             });
-          } catch (embedErr) {
-            console.error("Chat memory embedding error:", embedErr);
+          } catch (embedQueueErr) {
+            console.error("Embedding queue error:", embedQueueErr.message);
           }
         }
 
-        try {
-          await enqueueSummaryGeneration({
-            userId: req.user.userId,
-            threadId,
-            messageId: userMessage.messageId,
-          });
-        } catch (summaryQueueErr) {
-          console.error("Summary queue error:", summaryQueueErr.message);
+        if (aiSettings.summaryGenerationEnabled) {
+          try {
+            await enqueueSummaryGeneration({
+              userId: req.user.userId,
+              threadId,
+              messageId: assistantMessage.messageId,
+            });
+          } catch (summaryQueueErr) {
+            console.error("Summary queue error:", summaryQueueErr.message);
+          }
         }
       }
     }
