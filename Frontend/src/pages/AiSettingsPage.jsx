@@ -109,6 +109,8 @@ const AiSettingsPage = () => {
       maxOutputTokens: json.maxOutputTokens ?? DEFAULT_AI_SETTINGS_FORM.maxOutputTokens,
       ragEnabled: json.ragEnabled !== false,
       knowledgeRagEnabled: json.knowledgeRagEnabled !== false,
+      longTermMemoryEnabled: json.longTermMemoryEnabled !== false,
+      summaryGenerationEnabled: json.summaryGenerationEnabled !== false,
       model: json.model || DEFAULT_AI_SETTINGS_FORM.model,
       provider: json.provider || DEFAULT_AI_SETTINGS_FORM.provider,
     });
@@ -144,6 +146,8 @@ const AiSettingsPage = () => {
           maxOutputTokens: Number(form.maxOutputTokens),
           ragEnabled: Boolean(form.ragEnabled),
           knowledgeRagEnabled: Boolean(form.knowledgeRagEnabled),
+          longTermMemoryEnabled: Boolean(form.longTermMemoryEnabled),
+          summaryGenerationEnabled: Boolean(form.summaryGenerationEnabled),
           model: form.model,
           provider: form.provider,
         },
@@ -222,7 +226,7 @@ const AiSettingsPage = () => {
                 <ListItemButton onClick={() => openEdit(item)}>
                   <ListItemText
                     primary={item.name}
-                    secondary={`Model: ${json.model || '—'} · Temp: ${json.temperature ?? '—'} · Tokens: ${json.maxOutputTokens ?? '—'} · Files: ${json.knowledgeRagEnabled === false ? 'Off' : 'On'} · Chat RAG: ${json.ragEnabled === false ? 'Off' : 'On'}`}
+                    secondary={`Model: ${json.model || '—'} · Temp: ${json.temperature ?? '—'} · Tokens: ${json.maxOutputTokens ?? '—'} · Files: ${json.knowledgeRagEnabled === false ? 'Off' : 'On'} · Chat RAG: ${json.ragEnabled === false ? 'Off' : 'On'} · Memory: ${json.longTermMemoryEnabled === false ? 'Off' : 'On'} · Summaries: ${json.summaryGenerationEnabled === false ? 'Off' : 'On'}`}
                   />
                 </ListItemButton>
               </ListItem>
@@ -311,6 +315,35 @@ const AiSettingsPage = () => {
             }
             label="Chat memory RAG (store/search past replies)"
           />
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={Boolean(form.longTermMemoryEnabled)}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, longTermMemoryEnabled: e.target.checked }))
+                }
+              />
+            }
+            label="Long-term memory (remember facts across conversations)"
+          />
+
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={Boolean(form.summaryGenerationEnabled)}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, summaryGenerationEnabled: e.target.checked }))
+                  }
+                />
+              }
+              label="Conversation summaries"
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 6, mt: -0.5 }}>
+              When off, only the last 10 messages are sent as context.
+            </Typography>
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>

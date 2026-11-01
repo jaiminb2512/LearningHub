@@ -6,6 +6,8 @@ export const DEFAULT_AI_SETTINGS_FORM = {
   maxOutputTokens: 2048,
   ragEnabled: true,
   knowledgeRagEnabled: true,
+  longTermMemoryEnabled: true,
+  summaryGenerationEnabled: true,
   model: 'gemini-3.1-flash-lite-preview',
   provider: 'google',
 };
