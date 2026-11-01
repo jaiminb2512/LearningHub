@@ -1,5 +1,5 @@
 import {
-  buildGraph,
+  multiAgentGraph,
   extractInterruptPayload,
   extractAssistantText,
 } from "./agent.js";
@@ -35,7 +35,7 @@ export const streamMessage = async function* (
   });
 
   try {
-    const graph = await buildGraph({
+    const graph = await multiAgentGraph({
       model,
       options,
       userId,
