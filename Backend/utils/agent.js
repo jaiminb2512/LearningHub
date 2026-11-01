@@ -306,116 +306,37 @@ export const extractAssistantText = (result) => {
   return "";
 };
 
-const bookAgent = createAgent({
-  name: "book_agent",
-  model: geminiModel(),
-  prompt: `
-    You are a Book Management Agent.
+const bookTools = (userId, threadId, knowledgeRagEnabled) => {
+  let bookAgentTools = [];
+  if (knowledgeRagEnabled) {
+    bookAgentTools.push(
+      getKnowledgeContext(userId, threadId),
+      createBookTool(userId, threadId),
+      listBooksTool(userId),
+      updateBookTool(userId),
+      getBookTool(userId),
+      deleteBookTool(userId),
+      createNoteTool(userId),
+      listNotesTool(userId),
+      getNoteTool(userId),
+      updateNoteTool(userId),
+      deleteNoteTool(userId),
+      reorderNotesTool(userId),
+    );
+  }
 
-    Responsibilities:
-    - Create books.
-    - Retrieve books.
-    - Update books.
-    - Delete books.
-
-    Use tools to perform operations.
-    Never claim an operation succeeded unless the tool confirms it.
-    Do not teach concepts or perform general research.
-  `,
-});
-
-const bookAgentTool = tool(
-  async ({ request }) => {
-    const result = await bookAgent.invoke({
-      messages: [{ role: "user", content: request }],
-    });
-    
-    return result.messages.at(-1)?.content;
-  },
-  {
-    name: "delegate_to_book_agent",
-    description: "Delegate book-related requests.",
-    schema: z.object({
-      request: z.string(),
-    }),
-  },
-);
-
-const tutorAgent = createAgent({
-  name: "tutor_agent",
-  model: geminiModel(),
-  tools: [],
-  prompt: `
-    You are a Technical Tutor.
-
-    Responsibilities:
-    - Explain technical concepts.
-    - Teach programming.
-    - Provide practical examples.
-    - Help users understand difficult topics.
-    - Adapt explanations to the user's knowledge level.
-
-    Do not perform book management operations.
-  `,
-});
-
-const tutorAgentTool = tool(
-  async ({ request }) => {
-    const result = await tutorAgent.invoke({
-      messages: [{ role: "user", content: request }],
-    });
-
-    return result.messages.at(-1)?.content;
-  },
-  {
-    name: "delegate_to_tutor_agent",
-    description: "Delegate tutoring requests.",
-    schema: z.object({
-      request: z.string(),
-    }),
-  },
-);
-
-const supervisor = createAgent({
-  tools: [bookAgentTool, tutorAgentTool],
-  model: geminiModel(),
-
-  prompt: `
-    You are the Supervisor of LearningHub.
-
-    You manage three specialized agents.
-
-    Routing rules:
-
-    1. Book Agent:
-       Use for creating, retrieving, updating,
-       and deleting books.
-
-    2. Tutor Agent:
-       Use for explanations, programming help,
-       and teaching.
-
-    Instructions:
-    - Analyze every user request.
-    - Delegate to the most appropriate agent.
-    - Do not perform specialized tasks yourself.
-    - Return the agent's response to the user.
-    - Do not unnecessarily call multiple agents.
-  `,
-
-  outputMode: "last_message",
-});
-
-const supervisorNode = async (state) => {
-  const inputMessages = normalizeMessagesForGemini(
-    state.messages,
-    state.summary,
-  );
-
-  await supervisor.invoke({ messages: inputMessages });
+  return bookAgentTools;
 };
 
-export const multiAgentGraph = async (
+const workerTools = (userId, threadId, ragEnabled) => {
+  let workerAgentTools = [];
+  if (ragEnabled) {
+    workerAgentTools.push(getChatMemoryContext(userId, threadId));
+  }
+  return workerAgentTools;
+};
+
+export const multiAgentGraph = async ({
   model,
   options,
   userId,
@@ -424,7 +345,73 @@ export const multiAgentGraph = async (
   summary,
   knowledgeRagEnabled,
   ragEnabled,
-) => {
+}) => {
+
+  const bookAgent = createAgent({
+    name: "book_agent",
+    model: geminiModel(model),
+    tools: bookTools(userId, threadId, knowledgeRagEnabled),
+    prompt: getPrompt("bookAgentPrompt"),
+  });
+
+  const tutorAgent = createAgent({
+    name: "tutor_agent",
+    model: geminiModel(model),
+    tools: workerTools(userId, threadId, ragEnabled),
+    prompt: systemPrompt,
+  });
+
+  const bookAgentTool = tool(
+    async ({ request }) => {
+      const result = await bookAgent.invoke({
+        messages: [{ role: "user", content: request }],
+      });
+
+      return result.messages.at(-1)?.content;
+    },
+    {
+      name: "delegate_to_book_agent",
+      description: "Delegate book-related requests.",
+      schema: z.object({
+        request: z.string(),
+      }),
+    },
+  );
+
+  const tutorAgentTool = tool(
+    async ({ request }) => {
+      const result = await tutorAgent.invoke({
+        messages: [{ role: "user", content: request }],
+      });
+
+      return result.messages.at(-1)?.content;
+    },
+    {
+      name: "delegate_to_tutor_agent",
+      description: "Delegate tutoring requests.",
+      schema: z.object({
+        request: z.string(),
+      }),
+    },
+  );
+
+  const supervisor = createAgent({
+    tools: [bookAgentTool, tutorAgentTool],
+    model: geminiModel(model),
+    prompt: getPrompt("supervisorPrompt"),
+    outputMode: "last_message",
+  });
+
+  const supervisorNode = async (state) => {
+    const inputMessages = normalizeMessagesForGemini(
+      state.messages,
+      summary,
+    );
+
+    const result = await supervisor.invoke({ messages: inputMessages });
+    return { messages: result.messages };
+  };
+
   return new StateGraph(graphState)
     .addNode("supervisor", supervisorNode)
     .addEdge(START, "supervisor")

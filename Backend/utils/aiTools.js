@@ -203,7 +203,7 @@ export const deleteBookTool = (userId) => {
 };
 
 export const createNoteTool = (userId) => {
-  return new DynamicStructuredTool({
+  return new DynamicStructuredTool({  
     name: "create_note",
     description:
       "Create a new note in a book. User must select which book to place the note in.",
