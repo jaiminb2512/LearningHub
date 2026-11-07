@@ -345,6 +345,7 @@ export const multiAgentGraph = async ({
   summary,
   knowledgeRagEnabled,
   ragEnabled,
+  langfuseHandler,
 }) => {
 
   const bookAgent = createAgent({
@@ -361,11 +362,16 @@ export const multiAgentGraph = async ({
     prompt: systemPrompt,
   });
 
+  const subAgentConfig = langfuseHandler
+    ? { callbacks: [langfuseHandler] }
+    : undefined;
+
   const bookAgentTool = tool(
     async ({ request }) => {
-      const result = await bookAgent.invoke({
-        messages: [{ role: "user", content: request }],
-      });
+      const result = await bookAgent.invoke(
+        { messages: [{ role: "user", content: request }] },
+        subAgentConfig,
+      );
 
       return result.messages.at(-1)?.content;
     },
@@ -380,9 +386,10 @@ export const multiAgentGraph = async ({
 
   const tutorAgentTool = tool(
     async ({ request }) => {
-      const result = await tutorAgent.invoke({
-        messages: [{ role: "user", content: request }],
-      });
+      const result = await tutorAgent.invoke(
+        { messages: [{ role: "user", content: request }] },
+        subAgentConfig,
+      );
 
       return result.messages.at(-1)?.content;
     },
@@ -395,8 +402,12 @@ export const multiAgentGraph = async ({
     },
   );
 
+  const supervisorTools = knowledgeRagEnabled
+    ? [bookAgentTool, tutorAgentTool]
+    : [tutorAgentTool];
+
   const supervisor = createAgent({
-    tools: [bookAgentTool, tutorAgentTool],
+    tools: supervisorTools,
     model: geminiModel(model),
     prompt: getPrompt("supervisorPrompt"),
     outputMode: "last_message",

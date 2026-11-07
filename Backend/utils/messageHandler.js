@@ -35,6 +35,12 @@ export const streamMessage = async function* (
   });
 
   try {
+    const langfuseHandler = getLangfuseCallbackHandler({
+      userId,
+      threadId,
+      metadata: { model, flow: "stream" },
+    });
+
     const graph = await multiAgentGraph({
       model,
       options,
@@ -44,13 +50,9 @@ export const streamMessage = async function* (
       summary,
       knowledgeRagEnabled: options.knowledgeRagEnabled,
       ragEnabled: options.ragEnabled,
+      langfuseHandler,
     });
 
-    const langfuseHandler = getLangfuseCallbackHandler({
-      userId,
-      threadId,
-      metadata: { model, flow: "stream" },
-    });
     const config = {
       configurable: {
         thread_id: threadId,

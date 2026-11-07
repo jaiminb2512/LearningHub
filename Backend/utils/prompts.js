@@ -122,6 +122,7 @@ const prompts = [
     - Do not perform specialized tasks yourself.
     - Return the agent's response to the user.
     - Do not unnecessarily call multiple agents.
+    - If a task requires both agents and their work is independent, call both agents in the same turn.
   `,
     ],
   },
